@@ -387,11 +387,11 @@ print_named_ascii(size_t n_bytes, const char *block,
 		" sp"
 	};
 	// buf[N] pos:  01234 56789
-	char buf[12] = "   x\0 0xx\0";
-	// actually "   x\0 xxx\0", but want to share string with print_ascii.
+	char buf[12] = "   x\0 xxx\0";
 	// [12] because we take three 32bit stack slots anyway, and
 	// gcc is too dumb to initialize with constant stores,
 	// it copies initializer from rodata. Oh well.
+	// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65410
 
 	while (n_bytes--) {
 		unsigned masked_c = *(unsigned char *) block++;
@@ -419,7 +419,7 @@ print_ascii(size_t n_bytes, const char *block,
 		const char *unused_fmt_string UNUSED_PARAM)
 {
 	// buf[N] pos:  01234 56789
-	char buf[12] = "   x\0 0xx\0";
+	char buf[12] = "   x\0 xxx\0";
 
 	while (n_bytes--) {
 		const char *s;
@@ -455,11 +455,9 @@ print_ascii(size_t n_bytes, const char *block,
 		case '\v':
 			s = "  \\v";
 			break;
-		case '\x7f':
-			s = " 177";
-			break;
-		default: /* c is never larger than 040 */
-			buf[7] = (c >> 3) + '0';
+		default:
+			buf[6] = (c >> 6 & 3) + '0';
+			buf[7] = (c >> 3 & 7) + '0';
 			buf[8] = (c & 7) + '0';
 			s = buf + 5;
 		}
@@ -1166,12 +1164,6 @@ parse_old_offset(const char *s, off_t *offset)
 int od_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int od_main(int argc UNUSED_PARAM, char **argv)
 {
-	static const struct suffix_mult bkm[] = {
-		{ "b", 512 },
-		{ "k", 1024 },
-		{ "m", 1024*1024 },
-		{ "", 0 }
-	};
 #if ENABLE_LONG_OPTS
 	static const char od_longopts[] ALIGN1 =
 		"skip-bytes\0"        Required_argument "j"
@@ -1230,7 +1222,7 @@ int od_main(int argc UNUSED_PARAM, char **argv)
 		address_pad_len_char = doxn_address_pad_len_char[pos];
 	}
 	if (opt & OPT_N) {
-		max_bytes_to_format = xstrtooff_sfx(str_N, 0, bkm);
+		max_bytes_to_format = xstrtooff_sfx(str_N, 0, bkm_suffixes);
 	}
 	if (opt & OPT_a) decode_format_string("a");
 	if (opt & OPT_b) decode_format_string("oC");
@@ -1239,7 +1231,7 @@ int od_main(int argc UNUSED_PARAM, char **argv)
 	if (opt & OPT_f) decode_format_string("fF");
 	if (opt & OPT_h) decode_format_string("x2");
 	if (opt & OPT_i) decode_format_string("d2");
-	if (opt & OPT_j) n_bytes_to_skip = xstrtooff_sfx(str_j, 0, bkm);
+	if (opt & OPT_j) n_bytes_to_skip = xstrtooff_sfx(str_j, 0, bkm_suffixes);
 	if (opt & OPT_l) decode_format_string("d4");
 	if (opt & OPT_o) decode_format_string("o2");
 	while (lst_t) {
@@ -1248,7 +1240,7 @@ int od_main(int argc UNUSED_PARAM, char **argv)
 	if (opt & OPT_x) decode_format_string("x2");
 	if (opt & OPT_s) decode_format_string("d2");
 	if (opt & OPT_S) {
-		string_min = xstrtou_sfx(str_S, 0, bkm);
+		string_min = xstrtou_sfx(str_S, 0, bkm_suffixes);
 	}
 
 	// Bloat:

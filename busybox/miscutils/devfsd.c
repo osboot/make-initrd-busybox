@@ -1083,21 +1083,23 @@ static int get_uid_gid(int flag, const char *string)
 {
 	struct passwd *pw_ent;
 	struct group *grp_ent;
-	static const char *msg;
+	const char *msg;
 
-	if (ENABLE_DEVFSD_VERBOSE)
-		msg = "user";
-
-	if (isdigit(string[0]) ||((string[0] == '-') && isdigit(string[1])))
+	if (isdigit(string[0]) || ((string[0] == '-') && isdigit(string[1])))
 		return atoi(string);
 
 	if (flag == UID && (pw_ent = getpwnam(string)) != NULL)
 		return pw_ent->pw_uid;
 
-	if (flag == GID && (grp_ent = getgrnam(string)) != NULL)
-		return grp_ent->gr_gid;
-	else if (ENABLE_DEVFSD_VERBOSE)
-		msg = "group";
+	if (ENABLE_DEVFSD_VERBOSE)
+		msg = "user";
+
+	if (flag == GID) {
+		if ((grp_ent = getgrnam(string)) != NULL)
+			return grp_ent->gr_gid;
+		if (ENABLE_DEVFSD_VERBOSE)
+			msg = "group";
+	}
 
 	if (ENABLE_DEVFSD_VERBOSE)
 		msg_logger(LOG_ERR, "unknown %s: %s, defaulting to %cid=0",  msg, string, msg[0]);
@@ -1140,19 +1142,19 @@ static void signal_handler(int sig)
 
 static const char *get_variable(const char *variable, void *info)
 {
-	static char sbuf[sizeof(int)*3 + 2]; /* sign and NUL */
 	static char *hostname;
 
 	struct get_variable_info *gv_info = info;
 	const char *field_names[] = {
-			"hostname", "mntpt", "devpath", "devname",
-			"uid", "gid", "mode", hostname, mount_point,
-			gv_info->devpath, gv_info->devname, NULL
+			"hostname", "mntpt", "devpath", "devname", "uid", "gid", "mode",
+			NULL, mount_point, gv_info->devpath, gv_info->devname, NULL
 	};
 	int i;
 
 	if (!hostname)
 		hostname = safe_gethostname();
+	field_names[7] = hostname;
+
 	/* index_in_str_array returns i>=0  */
 	i = index_in_str_array(field_names, variable);
 
@@ -1162,12 +1164,11 @@ static const char *get_variable(const char *variable, void *info)
 		return field_names[i + 7];
 
 	if (i == 4)
-		sprintf(sbuf, "%u", gv_info->info->uid);
-	else if (i == 5)
-		sprintf(sbuf, "%u", gv_info->info->gid);
-	else if (i == 6)
-		sprintf(sbuf, "%o", gv_info->info->mode);
-	return sbuf;
+		return auto_string(xasprintf("%u", gv_info->info->uid));
+	if (i == 5)
+		return auto_string(xasprintf("%u", gv_info->info->gid));
+	/* i == 6 */
+	return auto_string(xasprintf("%o", gv_info->info->mode));
 }   /*  End Function get_variable  */
 
 static void service(struct stat statbuf, char *path)
@@ -1403,7 +1404,6 @@ const char *get_old_name(const char *devname, unsigned int namelen,
 	int indexx;
 	const char *pty1;
 	const char *pty2;
-	size_t len;
 	/* 1 to 5  "scsi/" , 6 to 9 "ide/host", 10 sbp/, 11 vcc/, 12 pty/ */
 	static const char *const fmt[] = {
 		NULL ,
@@ -1423,12 +1423,11 @@ const char *get_old_name(const char *devname, unsigned int namelen,
 	};
 
 	for (trans = translate_table; trans->match != NULL; ++trans) {
-		len = strlen(trans->match);
-
-		if (strncmp(devname, trans->match, len) == 0) {
+		char *after_match = is_prefixed_with(devname, trans->match);
+		if (after_match) {
 			if (trans->format == NULL)
-				return devname + len;
-			sprintf(buffer, trans->format, devname + len);
+				return after_match;
+			sprintf(buffer, trans->format, after_match);
 			return buffer;
 		}
 	}

@@ -91,6 +91,7 @@
 #if ENABLE_HUSH_CASE
 # include <fnmatch.h>
 #endif
+#include <sys/utsname.h> /* for setting $HOSTNAME */
 
 #include "busybox.h"  /* for APPLET_IS_NOFORK/NOEXEC */
 #include "unicode.h"
@@ -441,7 +442,7 @@ enum {
 	MAYBE_ASSIGNMENT      = 0,
 	DEFINITELY_ASSIGNMENT = 1,
 	NOT_ASSIGNMENT        = 2,
-	/* Not an assigment, but next word may be: "if v=xyz cmd;" */
+	/* Not an assignment, but next word may be: "if v=xyz cmd;" */
 	WORD_IS_KEYWORD       = 3,
 };
 /* Used for initialization: o_string foo = NULL_O_STRING; */
@@ -850,6 +851,9 @@ static int builtin_jobs(char **argv) FAST_FUNC;
 #if ENABLE_HUSH_HELP
 static int builtin_help(char **argv) FAST_FUNC;
 #endif
+#if MAX_HISTORY && ENABLE_FEATURE_EDITING
+static int builtin_history(char **argv) FAST_FUNC;
+#endif
 #if ENABLE_HUSH_LOCAL
 static int builtin_local(char **argv) FAST_FUNC;
 #endif
@@ -919,6 +923,9 @@ static const struct built_in_command bltins1[] = {
 #if ENABLE_HUSH_HELP
 	BLTIN("help"     , builtin_help    , NULL),
 #endif
+#if MAX_HISTORY && ENABLE_FEATURE_EDITING
+	BLTIN("history"  , builtin_history , "Show command history"),
+#endif
 #if ENABLE_HUSH_JOB
 	BLTIN("jobs"     , builtin_jobs    , "List jobs"),
 #endif
@@ -938,6 +945,7 @@ static const struct built_in_command bltins1[] = {
 	BLTIN("source"   , builtin_source  , "Run commands in a file"),
 #endif
 	BLTIN("trap"     , builtin_trap    , "Trap signals"),
+	BLTIN("true"     , builtin_true    , NULL),
 	BLTIN("type"     , builtin_type    , "Show command type"),
 	BLTIN("ulimit"   , shell_builtin_ulimit  , "Control resource limits"),
 	BLTIN("umask"    , builtin_umask   , "Set file creation mask"),
@@ -1304,7 +1312,7 @@ static void restore_G_args(save_arg_t *sv, char **argv)
  * backgrounds (i.e. stops) or kills all members of currently running
  * pipe.
  *
- * Wait builtin in interruptible by signals for which user trap is set
+ * Wait builtin is interruptible by signals for which user trap is set
  * or by SIGINT in interactive shell.
  *
  * Trap handlers will execute even within trap handlers. (right?)
@@ -1383,7 +1391,7 @@ static void restore_G_args(save_arg_t *sv, char **argv)
  * are set to '' (ignore) are NOT reset to defaults. We do the same.
  *
  * Problem: the above approach makes it unwieldy to catch signals while
- * we are in read builtin, of while we read commands from stdin:
+ * we are in read builtin, or while we read commands from stdin:
  * masked signals are not visible!
  *
  * New implementation
@@ -1392,7 +1400,7 @@ static void restore_G_args(save_arg_t *sv, char **argv)
  * for them - a bit like emulating kernel pending signal mask in userspace.
  * We are interested in: signals which need to have special handling
  * as described above, and all signals which have traps set.
- * Signals are rocorded in pending_set.
+ * Signals are recorded in pending_set.
  * After each pipe execution, we extract any pending signals
  * and act on them.
  *
@@ -1471,10 +1479,11 @@ static sighandler_t install_sighandler(int sig, sighandler_t handler)
 
 #if ENABLE_HUSH_JOB
 
+static void xfunc_has_died(void);
 /* After [v]fork, in child: do not restore tty pgrp on xfunc death */
-# define disable_restore_tty_pgrp_on_exit() (die_sleep = 0)
+# define disable_restore_tty_pgrp_on_exit() (die_func = NULL)
 /* After [v]fork, in parent: restore tty pgrp on xfunc death */
-# define enable_restore_tty_pgrp_on_exit()  (die_sleep = -1)
+# define enable_restore_tty_pgrp_on_exit()  (die_func = xfunc_has_died)
 
 /* Restores tty foreground process group, and exits.
  * May be called as signal handler for fatal signal
@@ -1577,6 +1586,15 @@ static void hush_exit(int exitcode)
 #else
 	exit(exitcode);
 #endif
+}
+
+static void xfunc_has_died(void) NORETURN;
+static void xfunc_has_died(void)
+{
+	/* xfunc has failed! die die die */
+	/* no EXIT traps, this is an escape hatch! */
+	G.exiting = 1;
+	hush_exit(xfunc_error_retval);
 }
 
 
@@ -1969,6 +1987,26 @@ static struct variable *set_vars_and_save_old(char **strings)
 
 
 /*
+ * Unicode helper
+ */
+static void reinit_unicode_for_hush(void)
+{
+	/* Unicode support should be activated even if LANG is set
+	 * _during_ shell execution, not only if it was set when
+	 * shell was started. Therefore, re-check LANG every time:
+	 */
+	if (ENABLE_FEATURE_CHECK_UNICODE_IN_ENV
+	 || ENABLE_UNICODE_USING_LOCALE
+        ) {
+		const char *s = get_local_var_value("LC_ALL");
+		if (!s) s = get_local_var_value("LC_CTYPE");
+		if (!s) s = get_local_var_value("LANG");
+		reinit_unicode(s);
+	}
+}
+
+
+/*
  * in_str support
  */
 static int FAST_FUNC static_get(struct in_str *i)
@@ -2034,12 +2072,7 @@ static void get_user_input(struct in_str *i)
 	/* Enable command line editing only while a command line
 	 * is actually being read */
 	do {
-		/* Unicode support should be activated even if LANG is set
-		 * _during_ shell execution, not only if it was set when
-		 * shell was started. Therefore, re-check LANG every time:
-		 */
-		reinit_unicode(get_local_var_value("LANG"));
-
+		reinit_unicode_for_hush();
 		G.flag_SIGINT = 0;
 		/* buglet: SIGINT will not make new prompt to appear _at once_,
 		 * only after <Enter>. (^C will work) */
@@ -3138,11 +3171,29 @@ static int reserved_word(o_string *word, struct parse_context *ctx)
 		old->command->group = ctx->list_head;
 		old->command->cmd_type = CMD_NORMAL;
 # if !BB_MMU
-		o_addstr(&old->as_string, ctx->as_string.data);
-		o_free_unsafe(&ctx->as_string);
-		old->command->group_as_string = xstrdup(old->as_string.data);
-		debug_printf_parse("pop, remembering as:'%s'\n",
-				old->command->group_as_string);
+		/* At this point, the compound command's string is in
+		 * ctx->as_string... except for the leading keyword!
+		 * Consider this example: "echo a | if true; then echo a; fi"
+		 * ctx->as_string will contain "true; then echo a; fi",
+		 * with "if " remaining in old->as_string!
+		 */
+		{
+			char *str;
+			int len = old->as_string.length;
+			/* Concatenate halves */
+			o_addstr(&old->as_string, ctx->as_string.data);
+			o_free_unsafe(&ctx->as_string);
+			/* Find where leading keyword starts in first half */
+			str = old->as_string.data + len;
+			if (str > old->as_string.data)
+				str--; /* skip whitespace after keyword */
+			while (str > old->as_string.data && isalpha(str[-1]))
+				str--;
+			/* Ugh, we're done with this horrid hack */
+			old->command->group_as_string = xstrdup(str);
+			debug_printf_parse("pop, remembering as:'%s'\n",
+					old->command->group_as_string);
+		}
 # endif
 		*ctx = *old;   /* physical copy */
 		free(old);
@@ -4225,7 +4276,7 @@ static struct pipe *parse_stream(char **pstring,
 				pi = NULL;
 			}
 #if !BB_MMU
-			debug_printf_parse("as_string '%s'\n", ctx.as_string.data);
+			debug_printf_parse("as_string1 '%s'\n", ctx.as_string.data);
 			if (pstring)
 				*pstring = ctx.as_string.data;
 			else
@@ -4376,7 +4427,7 @@ static struct pipe *parse_stream(char **pstring,
 			) {
 				o_free(&dest);
 #if !BB_MMU
-				debug_printf_parse("as_string '%s'\n", ctx.as_string.data);
+				debug_printf_parse("as_string2 '%s'\n", ctx.as_string.data);
 				if (pstring)
 					*pstring = ctx.as_string.data;
 				else
@@ -4616,9 +4667,6 @@ static struct pipe *parse_stream(char **pstring,
 				 * with redirect_opt_num(), but bash doesn't do it.
 				 * "echo foo 2| cat" yields "foo 2". */
 				done_command(&ctx);
-#if !BB_MMU
-				o_reset_to_empty_unquoted(&ctx.as_string);
-#endif
 			}
 			goto new_cmd;
 		case '(':
@@ -5017,8 +5065,9 @@ static NOINLINE const char *expand_one_var(char **to_be_freed_pp, char *arg, cha
 
 	/* Handle any expansions */
 	if (exp_op == 'L') {
+		reinit_unicode_for_hush();
 		debug_printf_expand("expand: length(%s)=", val);
-		val = utoa(val ? strlen(val) : 0);
+		val = utoa(val ? unicode_strlen(val) : 0);
 		debug_printf_expand("%s\n", val);
 	} else if (exp_op) {
 		if (exp_op == '%' || exp_op == '#') {
@@ -5366,7 +5415,6 @@ static NOINLINE int expand_vars_to_list(o_string *output, int n, char *arg)
 						!!(output->o_expflags & EXP_FLAG_ESC_GLOB_CHARS));
 			}
 			break;
-
 		} /* switch (char after <SPECIAL_VAR_SYMBOL>) */
 
 		if (val && val[0]) {
@@ -5860,7 +5908,7 @@ static FILE *generate_stream_from_string(const char *s, pid_t *pid_p)
 		 * Our solution: ONLY bare $(trap) or `trap` is special.
 		 */
 		s = skip_whitespace(s);
-		if (strncmp(s, "trap", 4) == 0
+		if (is_prefixed_with(s, "trap")
 		 && skip_whitespace(s + 4)[0] == '\0'
 		) {
 			static const char *const argv[] = { NULL, NULL };
@@ -6756,7 +6804,7 @@ static int checkjobs(struct pipe *fg_pipe)
 						int sig = WTERMSIG(status);
 						if (i == fg_pipe->num_cmds-1)
 							/* TODO: use strsignal() instead for bash compat? but that's bloat... */
-							printf("%s\n", sig == SIGINT || sig == SIGPIPE ? "" : get_signame(sig));
+							puts(sig == SIGINT || sig == SIGPIPE ? "" : get_signame(sig));
 						/* TODO: if (WCOREDUMP(status)) + " (core dumped)"; */
 						/* TODO: MIPS has 128 sigs (1..128), what if sig==128 here?
 						 * Maybe we need to use sig | 128? */
@@ -7354,7 +7402,7 @@ static int run_list(struct pipe *pi)
 				 * and we should not execute CMD */
 				debug_printf_exec("skipped cmd because of || or &&\n");
 				last_followup = pi->followup;
-				continue;
+				goto dont_check_jobs_but_continue;
 			}
 		}
 		last_followup = pi->followup;
@@ -7493,8 +7541,10 @@ static int run_list(struct pipe *pi)
 							G.flag_break_continue = 0;
 						/* else: e.g. "continue 2" should *break* once, *then* continue */
 					} /* else: "while... do... { we are here (innermost list is not a loop!) };...done" */
-					if (G.depth_break_continue != 0 || fbc == BC_BREAK)
-						goto check_jobs_and_break;
+					if (G.depth_break_continue != 0 || fbc == BC_BREAK) {
+						checkjobs(NULL);
+						break;
+					}
 					/* "continue": simulate end of loop */
 					rword = RES_DONE;
 					continue;
@@ -7502,7 +7552,6 @@ static int run_list(struct pipe *pi)
 #endif
 #if ENABLE_HUSH_FUNCTIONS
 				if (G.flag_return_in_progress == 1) {
-					/* same as "goto check_jobs_and_break" */
 					checkjobs(NULL);
 					break;
 				}
@@ -7544,6 +7593,9 @@ static int run_list(struct pipe *pi)
 		if (rword == RES_IF || rword == RES_ELIF)
 			cond_code = rcode;
 #endif
+ check_jobs_and_continue:
+		checkjobs(NULL);
+ dont_check_jobs_but_continue: ;
 #if ENABLE_HUSH_LOOPS
 		/* Beware of "while false; true; do ..."! */
 		if (pi->next
@@ -7555,22 +7607,17 @@ static int run_list(struct pipe *pi)
 					/* "while false; do...done" - exitcode 0 */
 					G.last_exitcode = rcode = EXIT_SUCCESS;
 					debug_printf_exec(": while expr is false: breaking (exitcode:EXIT_SUCCESS)\n");
-					goto check_jobs_and_break;
+					break;
 				}
 			}
 			if (rword == RES_UNTIL) {
 				if (!rcode) {
 					debug_printf_exec(": until expr is true: breaking\n");
- check_jobs_and_break:
-					checkjobs(NULL);
 					break;
 				}
 			}
 		}
 #endif
-
- check_jobs_and_continue:
-		checkjobs(NULL);
 	} /* for (pi) */
 
 #if ENABLE_HUSH_JOB
@@ -7777,6 +7824,14 @@ int hush_main(int argc, char **argv)
 
 	/* Export PWD */
 	set_pwd_var(/*exp:*/ 1);
+
+#if ENABLE_HUSH_BASH_COMPAT
+	/* Set (but not export) HOSTNAME unless already set */
+	if (!get_local_var_value("HOSTNAME")) {
+		struct utsname uts;
+		uname(&uts);
+		set_local_var_from_halves("HOSTNAME", uts.nodename);
+	}
 	/* bash also exports SHLVL and _,
 	 * and sets (but doesn't export) the following variables:
 	 * BASH=/bin/bash
@@ -7785,7 +7840,6 @@ int hush_main(int argc, char **argv)
 	 * HOSTTYPE=i386
 	 * MACHTYPE=i386-pc-linux-gnu
 	 * OSTYPE=linux-gnu
-	 * HOSTNAME=<xxxxxxxxxx>
 	 * PPID=<NNNNN> - we also do it elsewhere
 	 * EUID=<NNNNN>
 	 * UID=<NNNNN>
@@ -7813,6 +7867,7 @@ int hush_main(int argc, char **argv)
 	 * PS2='> '
 	 * PS4='+ '
 	 */
+#endif
 
 #if ENABLE_FEATURE_EDITING
 	G.line_input_state = new_line_input_t(FOR_SHELL);
@@ -7821,12 +7876,7 @@ int hush_main(int argc, char **argv)
 	/* Initialize some more globals to non-zero values */
 	cmdedit_update_prompt();
 
-	if (setjmp(die_jmp)) {
-		/* xfunc has failed! die die die */
-		/* no EXIT traps, this is an escape hatch! */
-		G.exiting = 1;
-		hush_exit(xfunc_error_retval);
-	}
+	die_func = xfunc_has_died;
 
 	/* Shell is non-interactive at first. We need to call
 	 * install_special_sighandlers() if we are going to execute "sh <script>",
@@ -8084,9 +8134,7 @@ int hush_main(int argc, char **argv)
 			/* Grab control of the terminal */
 			tcsetpgrp(G_interactive_fd, getpid());
 		}
-		/* -1 is special - makes xfuncs longjmp, not exit
-		 * (we reset die_sleep = 0 whereever we [v]fork) */
-		enable_restore_tty_pgrp_on_exit(); /* sets die_sleep = -1 */
+		enable_restore_tty_pgrp_on_exit();
 
 # if ENABLE_HUSH_SAVEHISTORY && MAX_HISTORY > 0
 		{
@@ -8628,6 +8676,14 @@ static int FAST_FUNC builtin_help(char **argv UNUSED_PARAM)
 }
 #endif
 
+#if MAX_HISTORY && ENABLE_FEATURE_EDITING
+static int FAST_FUNC builtin_history(char **argv UNUSED_PARAM)
+{
+	show_history(G.line_input_state);
+	return EXIT_SUCCESS;
+}
+#endif
+
 #if ENABLE_HUSH_JOB
 static int FAST_FUNC builtin_jobs(char **argv UNUSED_PARAM)
 {
@@ -8880,6 +8936,9 @@ static int FAST_FUNC builtin_source(char **argv)
 	free(arg_path);
 	if (!input) {
 		/* bb_perror_msg("%s", *argv); - done by fopen_or_warn */
+		/* POSIX: non-interactive shell should abort here,
+		 * not merely fail. So far no one complained :)
+		 */
 		return EXIT_FAILURE;
 	}
 	close_on_exec_on(fileno(input));
@@ -8889,12 +8948,14 @@ static int FAST_FUNC builtin_source(char **argv)
 	/* "we are inside sourced file, ok to use return" */
 	G.flag_return_in_progress = -1;
 #endif
-	save_and_replace_G_args(&sv, argv);
+	if (argv[1])
+		save_and_replace_G_args(&sv, argv);
 
 	parse_and_run_file(input);
 	fclose(input);
 
-	restore_G_args(&sv, argv);
+	if (argv[1])
+		restore_G_args(&sv, argv);
 #if ENABLE_HUSH_FUNCTIONS
 	G.flag_return_in_progress = sv_flg;
 #endif
@@ -8907,24 +8968,29 @@ static int FAST_FUNC builtin_umask(char **argv)
 	int rc;
 	mode_t mask;
 
+	rc = 1;
 	mask = umask(0);
 	argv = skip_dash_dash(argv);
 	if (argv[0]) {
 		mode_t old_mask = mask;
 
-		mask ^= 0777;
-		rc = bb_parse_mode(argv[0], &mask);
-		mask ^= 0777;
-		if (rc == 0) {
+		/* numeric umasks are taken as-is */
+		/* symbolic umasks are inverted: "umask a=rx" calls umask(222) */
+		if (!isdigit(argv[0][0]))
+			mask ^= 0777;
+		mask = bb_parse_mode(argv[0], mask);
+		if (!isdigit(argv[0][0]))
+			mask ^= 0777;
+		if ((unsigned)mask > 0777) {
 			mask = old_mask;
 			/* bash messages:
 			 * bash: umask: 'q': invalid symbolic mode operator
 			 * bash: umask: 999: octal number out of range
 			 */
 			bb_error_msg("%s: invalid mode '%s'", "umask", argv[0]);
+			rc = 0;
 		}
 	} else {
-		rc = 1;
 		/* Mimic bash */
 		printf("%04o\n", (unsigned) mask);
 		/* fall through and restore mask which we set to 0 */
@@ -9054,12 +9120,9 @@ static int FAST_FUNC builtin_wait(char **argv)
 			return EXIT_FAILURE;
 		}
 		if (waitpid(pid, &status, 0) == pid) {
+			ret = WEXITSTATUS(status);
 			if (WIFSIGNALED(status))
 				ret = 128 + WTERMSIG(status);
-			else if (WIFEXITED(status))
-				ret = WEXITSTATUS(status);
-			else /* wtf? */
-				ret = EXIT_FAILURE;
 		} else {
 			bb_perror_msg("wait %s", *argv);
 			ret = 127;

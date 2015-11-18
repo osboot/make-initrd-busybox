@@ -89,13 +89,9 @@ struct in6_ifreq {
 /* Display an Internet socket address. */
 static const char* FAST_FUNC INET_sprint(struct sockaddr *sap, int numeric)
 {
-	static char *buff; /* defaults to NULL */
-
-	free(buff);
 	if (sap->sa_family == 0xFFFF || sap->sa_family == 0)
 		return "[NONE SET]";
-	buff = INET_rresolve((struct sockaddr_in *) sap, numeric, 0xffffff00);
-	return buff;
+	return auto_string(INET_rresolve((struct sockaddr_in *) sap, numeric, 0xffffff00));
 }
 
 #ifdef UNUSED_AND_BUGGY
@@ -171,13 +167,9 @@ static const struct aftype inet_aftype = {
 /* dirty! struct sockaddr usually doesn't suffer for inet6 addresses, fst. */
 static const char* FAST_FUNC INET6_sprint(struct sockaddr *sap, int numeric)
 {
-	static char *buff;
-
-	free(buff);
 	if (sap->sa_family == 0xFFFF || sap->sa_family == 0)
 		return "[NONE SET]";
-	buff = INET6_rresolve((struct sockaddr_in6 *) sap, numeric);
-	return buff;
+	return auto_string(INET6_rresolve((struct sockaddr_in6 *) sap, numeric));
 }
 
 #ifdef UNUSED
@@ -223,13 +215,11 @@ static const struct aftype inet6_aftype = {
 /* Display an UNSPEC address. */
 static char* FAST_FUNC UNSPEC_print(unsigned char *ptr)
 {
-	static char *buff;
-
+	char *buff;
 	char *pos;
 	unsigned int i;
 
-	if (!buff)
-		buff = xmalloc(sizeof(struct sockaddr) * 3 + 1);
+	buff = auto_string(xmalloc(sizeof(struct sockaddr) * 3 + 1));
 	pos = buff;
 	for (i = 0; i < sizeof(struct sockaddr); i++) {
 		/* careful -- not every libc's sprintf returns # bytes written */
@@ -712,17 +702,13 @@ static const struct hwtype loop_hwtype = {
 /* Display an Ethernet address in readable format. */
 static char* FAST_FUNC ether_print(unsigned char *ptr)
 {
-	static char *buff;
-
-	free(buff);
+	char *buff;
 	buff = xasprintf("%02X:%02X:%02X:%02X:%02X:%02X",
 			 (ptr[0] & 0377), (ptr[1] & 0377), (ptr[2] & 0377),
 			 (ptr[3] & 0377), (ptr[4] & 0377), (ptr[5] & 0377)
 		);
-	return buff;
+	return auto_string(buff);
 }
-
-static int FAST_FUNC ether_input(const char *bufp, struct sockaddr *sap);
 
 static const struct hwtype ether_hwtype = {
 	.name  = "ether",
@@ -730,59 +716,8 @@ static const struct hwtype ether_hwtype = {
 	.type  = ARPHRD_ETHER,
 	.alen  = ETH_ALEN,
 	.print = ether_print,
-	.input = ether_input
+	.input = in_ether
 };
-
-static unsigned hexchar2int(char c)
-{
-	if (isdigit(c))
-		return c - '0';
-	c &= ~0x20; /* a -> A */
-	if ((unsigned)(c - 'A') <= 5)
-		return c - ('A' - 10);
-	return ~0U;
-}
-
-/* Input an Ethernet address and convert to binary. */
-static int FAST_FUNC ether_input(const char *bufp, struct sockaddr *sap)
-{
-	unsigned char *ptr;
-	char c;
-	int i;
-	unsigned val;
-
-	sap->sa_family = ether_hwtype.type;
-	ptr = (unsigned char*) sap->sa_data;
-
-	i = 0;
-	while ((*bufp != '\0') && (i < ETH_ALEN)) {
-		val = hexchar2int(*bufp++) * 0x10;
-		if (val > 0xff) {
-			errno = EINVAL;
-			return -1;
-		}
-		c = *bufp;
-		if (c == ':' || c == 0)
-			val >>= 4;
-		else {
-			val |= hexchar2int(c);
-			if (val > 0xff) {
-				errno = EINVAL;
-				return -1;
-			}
-		}
-		if (c != 0)
-			bufp++;
-		*ptr++ = (unsigned char) val;
-		i++;
-
-		/* We might get a semicolon here - not required. */
-		if (*bufp == ':') {
-			bufp++;
-		}
-	}
-	return 0;
-}
 
 static const struct hwtype ppp_hwtype = {
 	.name =		"ppp",
@@ -927,7 +862,7 @@ static void print_bytes_scaled(unsigned long long ull, const char *end)
 static void ife_print6(struct interface *ptr)
 {
 	FILE *f;
-	char addr6[40], devname[20];
+	char addr6[40], devname[21];
 	struct sockaddr_in6 sap;
 	int plen, scope, dad_status, if_idx;
 	char addr6p[8][5];

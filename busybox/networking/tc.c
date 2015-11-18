@@ -65,7 +65,7 @@ struct globals {
 } FIX_ALIASING;
 #define G (*(struct globals*)&bb_common_bufsiz1)
 struct BUG_G_too_big {
-        char BUG_G_too_big[sizeof(G) <= COMMON_BUFSIZE ? 1 : -1];
+	char BUG_G_too_big[sizeof(G) <= COMMON_BUFSIZE ? 1 : -1];
 };
 #define filter_ifindex (G.filter_ifindex)
 #define filter_qdisc (G.filter_qdisc)
@@ -151,17 +151,17 @@ static void print_rate(char *buf, int len, uint32_t rate)
 	double tmp = (double)rate*8;
 
 	if (use_iec) {
-		if (tmp >= 1000.0*1024.0*1024.0)
-			snprintf(buf, len, "%.0fMibit", tmp/1024.0*1024.0);
-		else if (tmp >= 1000.0*1024)
+		if (tmp >= 1000*1024*1024)
+			snprintf(buf, len, "%.0fMibit", tmp/(1024*1024));
+		else if (tmp >= 1000*1024)
 			snprintf(buf, len, "%.0fKibit", tmp/1024);
 		else
 			snprintf(buf, len, "%.0fbit", tmp);
 	} else {
-		if (tmp >= 1000.0*1000000.0)
-			snprintf(buf, len, "%.0fMbit", tmp/1000000.0);
-		else if (tmp >= 1000.0 * 1000.0)
-			snprintf(buf, len, "%.0fKbit", tmp/1000.0);
+		if (tmp >= 1000*1000000)
+			snprintf(buf, len, "%.0fMbit", tmp/1000000);
+		else if (tmp >= 1000*1000)
+			snprintf(buf, len, "%.0fKbit", tmp/1000);
 		else
 			snprintf(buf, len, "%.0fbit",  tmp);
 	}
@@ -418,9 +418,6 @@ static int print_class(const struct sockaddr_nl *who UNUSED_PARAM,
 static int print_filter(const struct sockaddr_nl *who UNUSED_PARAM,
 						struct nlmsghdr *hdr, void *arg UNUSED_PARAM)
 {
-	struct tcmsg *msg = NLMSG_DATA(hdr);
-	int len = hdr->nlmsg_len;
-	struct rtattr * tb[TCA_MAX+1];
 	return 0;
 }
 

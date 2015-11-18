@@ -37,7 +37,7 @@ int FAST_FUNC is_well_formed_var_name(const char *s, char terminator)
 
 /* read builtin */
 
-/* Needs to be interruptible: shell mush handle traps and shell-special signals
+/* Needs to be interruptible: shell must handle traps and shell-special signals
  * while inside read. To implement this, be sure to not loop on EINTR
  * and return errno == EINTR reliably.
  */
@@ -380,7 +380,7 @@ static void printlim(unsigned opts, const struct rlimit *limit,
 		val = limit->rlim_cur;
 
 	if (val == RLIM_INFINITY)
-		printf("unlimited\n");
+		puts("unlimited");
 	else {
 		val >>= l->factor_shift;
 		printf("%llu\n", (long long) val);
@@ -493,7 +493,6 @@ shell_builtin_ulimit(char **argv)
 			/* bad option. getopt already complained. */
 			break;
 		}
-
 	} /* while (there are options) */
 
 	return 0;

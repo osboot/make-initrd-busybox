@@ -33,7 +33,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //usage:#define runsv_full_usage "\n\n"
 //usage:       "Start and monitor a service and optionally an appendant log service"
 
-#include <sys/poll.h>
 #include <sys/file.h>
 #include "libbb.h"
 #include "runit_lib.h"
@@ -115,7 +114,7 @@ struct globals {
 
 static void fatal2_cannot(const char *m1, const char *m2)
 {
-	bb_perror_msg_and_die("%s: fatal: cannot %s%s", dir, m1, m2);
+	bb_perror_msg_and_die("%s: fatal: can't %s%s", dir, m1, m2);
 	/* was exiting 111 */
 }
 static void fatal_cannot(const char *m)
@@ -125,7 +124,7 @@ static void fatal_cannot(const char *m)
 }
 static void fatal2x_cannot(const char *m1, const char *m2)
 {
-	bb_error_msg_and_die("%s: fatal: cannot %s%s", dir, m1, m2);
+	bb_error_msg_and_die("%s: fatal: can't %s%s", dir, m1, m2);
 	/* was exiting 111 */
 }
 static void warn_cannot(const char *m)

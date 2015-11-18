@@ -289,7 +289,7 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 					/* "hwaddress <class> <address>":
 					 * unlike ifconfig, ip doesnt want <class>
 					 * (usually "ether" keyword). Skip it. */
-					if (strncmp(command, "hwaddress", 9) == 0) {
+					if (is_prefixed_with(command, "hwaddress")) {
 						varvalue = skip_whitespace(skip_non_whitespace(varvalue));
 					}
 # endif
@@ -298,7 +298,7 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 # if ENABLE_FEATURE_IFUPDOWN_IP
 					/* Sigh...  Add a special case for 'ip' to convert from
 					 * dotted quad to bit count style netmasks.  */
-					if (strncmp(command, "bnmask", 6) == 0) {
+					if (is_prefixed_with(command, "bnmask")) {
 						unsigned res;
 						varvalue = get_var("netmask", 7, ifd);
 						if (varvalue) {
@@ -395,7 +395,7 @@ static int FAST_FUNC static_up6(struct interface_defn_t *ifd, execfn *exec)
 	result = execute("ip addr add %address%/%netmask% dev %iface%[[ label %label%]]", ifd, exec);
 	result += execute("ip link set[[ mtu %mtu%]][[ addr %hwaddress%]] %iface% up", ifd, exec);
 	/* Was: "[[ ip ....%gateway% ]]". Removed extra spaces w/o checking */
-	result += execute("[[ip route add ::/0 via %gateway%]][[ prio %metric%]]", ifd, exec);
+	result += execute("[[ip route add ::/0 via %gateway%]][[ metric %metric%]]", ifd, exec);
 # else
 	result = execute("ifconfig %iface%[[ media %media%]][[ hw %hwaddress%]][[ mtu %mtu%]] up", ifd, exec);
 	result += execute("ifconfig %iface% add %address%/%netmask%", ifd, exec);
@@ -482,7 +482,7 @@ static int FAST_FUNC static_up(struct interface_defn_t *ifd, execfn *exec)
 	result = execute("ip addr add %address%/%bnmask%[[ broadcast %broadcast%]] "
 			"dev %iface%[[ peer %pointopoint%]][[ label %label%]]", ifd, exec);
 	result += execute("ip link set[[ mtu %mtu%]][[ addr %hwaddress%]] %iface% up", ifd, exec);
-	result += execute("[[ip route add default via %gateway% dev %iface%[[ prio %metric%]]]]", ifd, exec);
+	result += execute("[[ip route add default via %gateway% dev %iface%[[ metric %metric%]]]]", ifd, exec);
 	return ((result == 3) ? 3 : 0);
 # else
 	/* ifconfig said to set iface up before it processes hw %hwaddress%,
@@ -555,7 +555,7 @@ static int FAST_FUNC dhcp_up(struct interface_defn_t *ifd, execfn *exec)
 		return 0;
 #  endif
 	for (i = 0; i < ARRAY_SIZE(ext_dhcp_clients); i++) {
-		if (exists_execable(ext_dhcp_clients[i].name))
+		if (executable_exists(ext_dhcp_clients[i].name))
 			return execute(ext_dhcp_clients[i].startcmd, ifd, exec);
 	}
 	bb_error_msg("no dhcp clients found");
@@ -592,7 +592,7 @@ static int FAST_FUNC dhcp_down(struct interface_defn_t *ifd, execfn *exec)
 	unsigned i;
 
 	for (i = 0; i < ARRAY_SIZE(ext_dhcp_clients); i++) {
-		if (exists_execable(ext_dhcp_clients[i].name)) {
+		if (executable_exists(ext_dhcp_clients[i].name)) {
 			result = execute(ext_dhcp_clients[i].stopcmd, ifd, exec);
 			if (result)
 				break;
@@ -685,6 +685,18 @@ static const struct address_family_t addr_inet = {
 
 #endif  /* FEATURE_IFUPDOWN_IPV4 */
 
+static int FAST_FUNC link_up_down(struct interface_defn_t *ifd UNUSED_PARAM, execfn *exec UNUSED_PARAM)
+{
+	return 1;
+}
+
+static const struct method_t link_methods[] = {
+	{ "none", link_up_down, link_up_down }
+};
+
+static const struct address_family_t addr_link = {
+	"link", ARRAY_SIZE(link_methods), link_methods
+};
 
 /* Returns pointer to the next word, or NULL.
  * In 1st case, advances *buf to the word after this one.
@@ -743,7 +755,7 @@ static const struct method_t *get_method(const struct address_family_t *af, char
 	return NULL;
 }
 
-static struct interfaces_file_t *read_interfaces(const char *filename)
+static struct interfaces_file_t *read_interfaces(const char *filename, struct interfaces_file_t *defn)
 {
 	/* Let's try to be compatible.
 	 *
@@ -758,19 +770,25 @@ static struct interfaces_file_t *read_interfaces(const char *filename)
 	 * be ignored. Blank lines are ignored. Lines may be indented freely.
 	 * A "\" character at the very end of the line indicates the next line
 	 * should be treated as a continuation of the current one.
+	 *
+	 * Lines  beginning with "source" are used to include stanzas from
+	 * other files, so configuration can be split into many files.
+	 * The word "source" is followed by the path of file to be sourced.
 	 */
 #if ENABLE_FEATURE_IFUPDOWN_MAPPING
 	struct mapping_defn_t *currmap = NULL;
 #endif
 	struct interface_defn_t *currif = NULL;
-	struct interfaces_file_t *defn;
 	FILE *f;
 	char *buf;
 	char *first_word;
 	char *rest_of_line;
 	enum { NONE, IFACE, MAPPING } currently_processing = NONE;
 
-	defn = xzalloc(sizeof(*defn));
+	if (!defn)
+		defn = xzalloc(sizeof(*defn));
+
+	debug_noise("reading %s file:\n", filename);
 	f = xfopen_for_read(filename);
 
 	while ((buf = xmalloc_fgetline(f)) != NULL) {
@@ -825,6 +843,7 @@ static struct interfaces_file_t *read_interfaces(const char *filename)
 #if ENABLE_FEATURE_IFUPDOWN_IPV6
 				&addr_inet6,
 #endif
+				&addr_link,
 				NULL
 			};
 			char *iface_name;
@@ -881,6 +900,8 @@ static struct interfaces_file_t *read_interfaces(const char *filename)
 				debug_noise("\nauto %s\n", first_word);
 			}
 			currently_processing = NONE;
+		} else if (strcmp(first_word, "source") == 0) {
+			read_interfaces(next_word(&rest_of_line), defn);
 		} else {
 			switch (currently_processing) {
 			case IFACE:
@@ -934,6 +955,7 @@ static struct interfaces_file_t *read_interfaces(const char *filename)
 		bb_error_msg_and_die("%s: I/O error", filename);
 	}
 	fclose(f);
+	debug_noise("\ndone reading %s\n\n", filename);
 
 	return defn;
 }
@@ -1137,12 +1159,12 @@ static char *run_mapping(char *physical, struct mapping_defn_t *map)
 
 static llist_t *find_iface_state(llist_t *state_list, const char *iface)
 {
-	unsigned iface_len = strlen(iface);
 	llist_t *search = state_list;
 
 	while (search) {
-		if ((strncmp(search->data, iface, iface_len) == 0)
-		 && (search->data[iface_len] == '=')
+		char *after_iface = is_prefixed_with(search->data, iface);
+		if (after_iface
+		 && *after_iface == '='
 		) {
 			return search;
 		}
@@ -1199,9 +1221,7 @@ int ifupdown_main(int argc UNUSED_PARAM, char **argv)
 		if (!DO_ALL) bb_show_usage();
 	}
 
-	debug_noise("reading %s file:\n", interfaces);
-	defn = read_interfaces(interfaces);
-	debug_noise("\ndone reading %s\n\n", interfaces);
+	defn = read_interfaces(interfaces, NULL);
 
 	/* Create a list of interfaces to work on */
 	if (DO_ALL) {
@@ -1219,6 +1239,7 @@ int ifupdown_main(int argc UNUSED_PARAM, char **argv)
 		char *pch;
 		bool okay = 0;
 		int cmds_ret;
+		bool curr_failure = 0;
 
 		iface = xstrdup(target_list->data);
 		target_list = target_list->link;
@@ -1284,11 +1305,11 @@ int ifupdown_main(int argc UNUSED_PARAM, char **argv)
 				/* Call the cmds function pointer, does either iface_up() or iface_down() */
 				cmds_ret = cmds(currif);
 				if (cmds_ret == -1) {
-					bb_error_msg("don't seem to have all the variables for %s/%s",
+					bb_error_msg("don't have all variables for %s/%s",
 							liface, currif->address_family->name);
-					any_failures = 1;
+					any_failures = curr_failure = 1;
 				} else if (cmds_ret == 0) {
-					any_failures = 1;
+					any_failures = curr_failure = 1;
 				}
 
 				currif->iface = oldiface;
@@ -1309,7 +1330,7 @@ int ifupdown_main(int argc UNUSED_PARAM, char **argv)
 			llist_t *state_list = read_iface_state();
 			llist_t *iface_state = find_iface_state(state_list, iface);
 
-			if (cmds == iface_up && !any_failures) {
+			if (cmds == iface_up && !curr_failure) {
 				char *newiface = xasprintf("%s=%s", iface, liface);
 				if (!iface_state) {
 					llist_add_to_end(&state_list, newiface);

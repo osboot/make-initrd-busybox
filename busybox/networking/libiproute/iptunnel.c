@@ -432,13 +432,12 @@ static void print_tunnel(struct ip_tunnel_parm *p)
 	else
 		printf(" ttl inherit ");
 	if (p->iph.tos) {
-		SPRINT_BUF(b1);
 		printf(" tos");
 		if (p->iph.tos & 1)
 			printf(" inherit");
 		if (p->iph.tos & ~1)
 			printf("%c%s ", p->iph.tos & 1 ? '/' : ' ',
-				rtnl_dsfield_n2a(p->iph.tos & ~1, b1));
+				rtnl_dsfield_n2a(p->iph.tos & ~1));
 	}
 	if (!(p->iph.frag_off & htons(IP_DF)))
 		printf(" nopmtudisc");
@@ -561,9 +560,9 @@ int FAST_FUNC do_iptunnel(char **argv)
 	enum { ARG_add = 0, ARG_change, ARG_del, ARG_show, ARG_list, ARG_lst };
 
 	if (*argv) {
-		smalluint key = index_in_substrings(keywords, *argv);
-		if (key > 5)
-			bb_error_msg_and_die(bb_msg_invalid_arg, *argv, applet_name);
+		int key = index_in_substrings(keywords, *argv);
+		if (key < 0)
+			invarg(*argv, applet_name);
 		argv++;
 		if (key == ARG_add)
 			return do_add(SIOCADDTUNNEL, argv);
