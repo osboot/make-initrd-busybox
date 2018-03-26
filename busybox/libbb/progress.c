@@ -25,7 +25,7 @@
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ''AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
  * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
@@ -44,13 +44,6 @@ enum {
 	/* Seconds when xfer considered "stalled" */
 	STALLTIME = 5
 };
-
-static unsigned int get_tty2_width(void)
-{
-	unsigned width;
-	get_terminal_width_height(2, &width, NULL);
-	return width;
-}
 
 void FAST_FUNC bb_progress_init(bb_progress_t *p, const char *curfile)
 {
@@ -80,7 +73,7 @@ void FAST_FUNC bb_progress_update(bb_progress_t *p,
 {
 	uoff_t beg_and_transferred;
 	unsigned since_last_update, elapsed;
-	int barlength;
+	int notty;
 	int kiloscale;
 
 	//transferred = 1234; /* use for stall detection testing */
@@ -137,18 +130,21 @@ void FAST_FUNC bb_progress_update(bb_progress_t *p,
 		}
 	}
 
+	notty = !isatty(STDERR_FILENO);
+
 	if (ENABLE_UNICODE_SUPPORT)
-		fprintf(stderr, "\r%s", p->curfile);
+		fprintf(stderr, "\r%s" + notty, p->curfile);
 	else
-		fprintf(stderr, "\r%-20.20s", p->curfile);
+		fprintf(stderr, "\r%-20.20s" + notty, p->curfile);
 
 	beg_and_transferred = beg_size + transferred;
 
 	if (totalsize != 0) {
+		int barlength;
 		unsigned ratio = 100 * beg_and_transferred / totalsize;
 		fprintf(stderr, "%4u%%", ratio);
 
-		barlength = get_tty2_width() - 49;
+		barlength = get_terminal_width(2) - 49;
 		if (barlength > 0) {
 			/* god bless gcc for variable arrays :) */
 			char buf[barlength + 1];
@@ -204,4 +200,6 @@ void FAST_FUNC bb_progress_update(bb_progress_t *p,
 		hours = eta / 3600;
 		fprintf(stderr, "%3u:%02u:%02u ETA", hours, secs / 60, secs % 60);
 	}
+	if (notty)
+		fputc('\n', stderr);
 }

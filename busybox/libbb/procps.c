@@ -8,7 +8,6 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
-
 #include "libbb.h"
 
 
@@ -283,7 +282,6 @@ int FAST_FUNC procps_read_smaps(pid_t pid, struct smaprec *total,
 }
 #endif
 
-void BUG_comm_size(void);
 procps_status_t* FAST_FUNC procps_scan(procps_status_t* sp, int flags)
 {
 	if (!sp)
@@ -371,6 +369,7 @@ procps_status_t* FAST_FUNC procps_scan(procps_status_t* sp, int flags)
 			| PSSCAN_TTY | PSSCAN_NICE
 			| PSSCAN_CPU)
 		) {
+			int s_idx;
 			char *cp, *comm1;
 			int tty;
 #if !ENABLE_FEATURE_FAST_TOP
@@ -385,8 +384,7 @@ procps_status_t* FAST_FUNC procps_scan(procps_status_t* sp, int flags)
 			/*if (!cp || cp[1] != ' ')
 				continue;*/
 			cp[0] = '\0';
-			if (sizeof(sp->comm) < 16)
-				BUG_comm_size();
+			BUILD_BUG_ON(sizeof(sp->comm) < 16);
 			comm1 = strchr(buf, '(');
 			/*if (comm1)*/
 				safe_strncpy(sp->comm, comm1 + 1, sizeof(sp->comm));
@@ -470,17 +468,20 @@ procps_status_t* FAST_FUNC procps_scan(procps_status_t* sp, int flags)
 #if ENABLE_FEATURE_PS_ADDITIONAL_COLUMNS
 			sp->niceness = tasknice;
 #endif
-
-			if (sp->vsz == 0 && sp->state[0] != 'Z')
+			sp->state[1] = ' ';
+			sp->state[2] = ' ';
+			s_idx = 1;
+			if (sp->vsz == 0 && sp->state[0] != 'Z') {
+				/* not sure what the purpose of this flag */
 				sp->state[1] = 'W';
-			else
-				sp->state[1] = ' ';
-			if (tasknice < 0)
-				sp->state[2] = '<';
-			else if (tasknice) /* > 0 */
-				sp->state[2] = 'N';
-			else
-				sp->state[2] = ' ';
+				s_idx = 2;
+			}
+			if (tasknice != 0) {
+				if (tasknice < 0)
+					sp->state[s_idx] = '<';
+				else /* > 0 */
+					sp->state[s_idx] = 'N';
+			}
 		}
 
 #if ENABLE_FEATURE_TOPMEM
@@ -590,12 +591,14 @@ void FAST_FUNC read_cmdline(char *buf, int col, unsigned pid, const char *comm)
 				buf[sz] = ' ';
 			sz--;
 		}
+		if (base[0] == '-') /* "-sh" (login shell)? */
+			base++;
 
 		/* If comm differs from argv0, prepend "{comm} ".
 		 * It allows to see thread names set by prctl(PR_SET_NAME).
 		 */
-		if (base[0] == '-') /* "-sh" (login shell)? */
-			base++;
+		if (!comm)
+			return;
 		comm_len = strlen(comm);
 		/* Why compare up to comm_len, not COMM_LEN-1?
 		 * Well, some processes rewrite argv, and use _spaces_ there
@@ -614,7 +617,7 @@ void FAST_FUNC read_cmdline(char *buf, int col, unsigned pid, const char *comm)
 			buf[col - 1] = '\0';
 		}
 	} else {
-		snprintf(buf, col, "[%s]", comm);
+		snprintf(buf, col, "[%s]", comm ? comm : "?");
 	}
 }
 

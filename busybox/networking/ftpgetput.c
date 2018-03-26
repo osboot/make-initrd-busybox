@@ -12,44 +12,50 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
+//config:config FTPGET
+//config:	bool "ftpget (8 kb)"
+//config:	default y
+//config:	help
+//config:	Retrieve a remote file via FTP.
+//config:
+//config:config FTPPUT
+//config:	bool "ftpput (7.7 kb)"
+//config:	default y
+//config:	help
+//config:	Store a remote file via FTP.
+//config:
+//config:config FEATURE_FTPGETPUT_LONG_OPTIONS
+//config:	bool "Enable long options in ftpget/ftpput"
+//config:	default y
+//config:	depends on LONG_OPTS && (FTPGET || FTPPUT)
+
+//applet:IF_FTPGET(APPLET_ODDNAME(ftpget, ftpgetput, BB_DIR_USR_BIN, BB_SUID_DROP, ftpget))
+//applet:IF_FTPPUT(APPLET_ODDNAME(ftpput, ftpgetput, BB_DIR_USR_BIN, BB_SUID_DROP, ftpput))
+
+//kbuild:lib-$(CONFIG_FTPGET) += ftpgetput.o
+//kbuild:lib-$(CONFIG_FTPPUT) += ftpgetput.o
 
 //usage:#define ftpget_trivial_usage
 //usage:       "[OPTIONS] HOST [LOCAL_FILE] REMOTE_FILE"
 //usage:#define ftpget_full_usage "\n\n"
 //usage:       "Download a file via FTP\n"
-//usage:	IF_FEATURE_FTPGETPUT_LONG_OPTIONS(
-//usage:     "\n	-c,--continue		Continue previous transfer"
-//usage:     "\n	-v,--verbose		Verbose"
-//usage:     "\n	-u,--username USER	Username"
-//usage:     "\n	-p,--password PASS	Password"
-//usage:     "\n	-P,--port NUM		Port"
-//usage:	)
-//usage:	IF_NOT_FEATURE_FTPGETPUT_LONG_OPTIONS(
 //usage:     "\n	-c	Continue previous transfer"
 //usage:     "\n	-v	Verbose"
 //usage:     "\n	-u USER	Username"
 //usage:     "\n	-p PASS	Password"
 //usage:     "\n	-P NUM	Port"
-//usage:	)
 //usage:
 //usage:#define ftpput_trivial_usage
 //usage:       "[OPTIONS] HOST [REMOTE_FILE] LOCAL_FILE"
 //usage:#define ftpput_full_usage "\n\n"
 //usage:       "Upload a file to a FTP server\n"
-//usage:	IF_FEATURE_FTPGETPUT_LONG_OPTIONS(
-//usage:     "\n	-v,--verbose		Verbose"
-//usage:     "\n	-u,--username USER	Username"
-//usage:     "\n	-p,--password PASS	Password"
-//usage:     "\n	-P,--port NUM		Port"
-//usage:	)
-//usage:	IF_NOT_FEATURE_FTPGETPUT_LONG_OPTIONS(
 //usage:     "\n	-v	Verbose"
 //usage:     "\n	-u USER	Username"
 //usage:     "\n	-p PASS	Password"
 //usage:     "\n	-P NUM	Port number"
-//usage:	)
 
 #include "libbb.h"
+#include "common_bufsiz.h"
 
 struct globals {
 	const char *user;
@@ -60,11 +66,8 @@ struct globals {
 	int do_continue;
 	char buf[4]; /* actually [BUFSZ] */
 } FIX_ALIASING;
-#define G (*(struct globals*)&bb_common_bufsiz1)
+#define G (*(struct globals*)bb_common_bufsiz1)
 enum { BUFSZ = COMMON_BUFSIZE - offsetof(struct globals, buf) };
-struct BUG_G_too_big {
-	char BUG_G_too_big[sizeof(G) <= COMMON_BUFSIZE ? 1 : -1];
-};
 #define user           (G.user          )
 #define password       (G.password      )
 #define lsa            (G.lsa           )
@@ -72,7 +75,10 @@ struct BUG_G_too_big {
 #define verbose_flag   (G.verbose_flag  )
 #define do_continue    (G.do_continue   )
 #define buf            (G.buf           )
-#define INIT_G() do { } while (0)
+#define INIT_G() do { \
+	setup_common_bufsiz(); \
+	BUILD_BUG_ON(sizeof(G) > COMMON_BUFSIZE); \
+} while (0)
 
 
 static void ftp_die(const char *msg) NORETURN;
@@ -338,12 +344,15 @@ int ftpgetput_main(int argc UNUSED_PARAM, char **argv)
 	/*
 	 * Decipher the command line
 	 */
+	/* must have 2 to 3 params; -v and -c count */
+#define OPTSTRING "^cvu:p:P:" "\0" "-2:?3:vv:cc"
 #if ENABLE_FEATURE_FTPGETPUT_LONG_OPTIONS
-	applet_long_options = ftpgetput_longopts;
+	getopt32long(argv, OPTSTRING, ftpgetput_longopts,
+#else
+	getopt32(argv, OPTSTRING,
 #endif
-	opt_complementary = "-2:vv:cc"; /* must have 2 to 3 params; -v and -c count */
-	getopt32(argv, "cvu:p:P:", &user, &password, &port,
-					&verbose_flag, &do_continue);
+			&user, &password, &port, &verbose_flag, &do_continue
+	);
 	argv += optind;
 
 	/* We want to do exactly _one_ DNS lookup, since some

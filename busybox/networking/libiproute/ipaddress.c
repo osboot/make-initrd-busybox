@@ -7,12 +7,12 @@
  * Changes:
  * Laszlo Valko <valko@linux.karinthy.hu> 990223: address label must be zero terminated
  */
-
 #include <fnmatch.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 
 #include "ip_common.h"  /* #include "libbb.h" is inside */
+#include "common_bufsiz.h"
 #include "rt_names.h"
 #include "utils.h"
 
@@ -39,8 +39,8 @@ struct filter_t {
 } FIX_ALIASING;
 typedef struct filter_t filter_t;
 
-#define G_filter (*(filter_t*)&bb_common_bufsiz1)
-
+#define G_filter (*(filter_t*)bb_common_bufsiz1)
+#define INIT_G() do { setup_common_bufsiz(); } while (0)
 
 static void print_link_flags(unsigned flags, unsigned mdown)
 {
@@ -113,7 +113,7 @@ static NOINLINE int print_linkinfo(const struct nlmsghdr *n)
 	if (G_filter.up && !(ifi->ifi_flags & IFF_UP))
 		return 0;
 
-	memset(tb, 0, sizeof(tb));
+	//memset(tb, 0, sizeof(tb)); - parse_rtattr does this
 	parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi), len);
 	if (tb[IFLA_IFNAME] == NULL) {
 		bb_error_msg("nil ifname");
@@ -214,8 +214,7 @@ static int FAST_FUNC print_addrinfo(const struct sockaddr_nl *who UNUSED_PARAM,
 {
 	struct ifaddrmsg *ifa = NLMSG_DATA(n);
 	int len = n->nlmsg_len;
-	struct rtattr * rta_tb[IFA_MAX+1];
-	char abuf[256];
+	struct rtattr *rta_tb[IFA_MAX+1];
 
 	if (n->nlmsg_type != RTM_NEWADDR && n->nlmsg_type != RTM_DELADDR)
 		return 0;
@@ -228,7 +227,7 @@ static int FAST_FUNC print_addrinfo(const struct sockaddr_nl *who UNUSED_PARAM,
 	if (G_filter.flushb && n->nlmsg_type != RTM_NEWADDR)
 		return 0;
 
-	memset(rta_tb, 0, sizeof(rta_tb));
+	//memset(rta_tb, 0, sizeof(rta_tb)); - parse_rtattr does this
 	parse_rtattr(rta_tb, IFA_MAX, IFA_RTA(ifa), n->nlmsg_len - NLMSG_LENGTH(sizeof(*ifa)));
 
 	if (!rta_tb[IFA_LOCAL])
@@ -291,9 +290,9 @@ static int FAST_FUNC print_addrinfo(const struct sockaddr_nl *who UNUSED_PARAM,
 		printf("    family %d ", ifa->ifa_family);
 
 	if (rta_tb[IFA_LOCAL]) {
-		fputs(rt_addr_n2a(ifa->ifa_family,
-					      RTA_DATA(rta_tb[IFA_LOCAL]),
-					      abuf, sizeof(abuf)), stdout);
+		fputs(rt_addr_n2a(ifa->ifa_family, RTA_DATA(rta_tb[IFA_LOCAL])),
+			stdout
+		);
 
 		if (rta_tb[IFA_ADDRESS] == NULL
 		 || memcmp(RTA_DATA(rta_tb[IFA_ADDRESS]), RTA_DATA(rta_tb[IFA_LOCAL]), 4) == 0
@@ -301,25 +300,22 @@ static int FAST_FUNC print_addrinfo(const struct sockaddr_nl *who UNUSED_PARAM,
 			printf("/%d ", ifa->ifa_prefixlen);
 		} else {
 			printf(" peer %s/%d ",
-				rt_addr_n2a(ifa->ifa_family,
-					    RTA_DATA(rta_tb[IFA_ADDRESS]),
-					    abuf, sizeof(abuf)),
-				ifa->ifa_prefixlen);
+				rt_addr_n2a(ifa->ifa_family, RTA_DATA(rta_tb[IFA_ADDRESS])),
+				ifa->ifa_prefixlen
+			);
 		}
 	}
 
 	if (rta_tb[IFA_BROADCAST]) {
 		printf("brd %s ",
 			rt_addr_n2a(ifa->ifa_family,
-					RTA_DATA(rta_tb[IFA_BROADCAST]),
-					abuf, sizeof(abuf))
+				RTA_DATA(rta_tb[IFA_BROADCAST]))
 		);
 	}
 	if (rta_tb[IFA_ANYCAST]) {
 		printf("any %s ",
 			rt_addr_n2a(ifa->ifa_family,
-					RTA_DATA(rta_tb[IFA_ANYCAST]),
-					abuf, sizeof(abuf))
+				RTA_DATA(rta_tb[IFA_ANYCAST]))
 		);
 	}
 	printf("scope %s ", rtnl_rtscope_n2a(ifa->ifa_scope));
@@ -455,7 +451,7 @@ int FAST_FUNC ipaddr_list_or_flush(char **argv, int flush)
 			G_filter.scopemask = -1;
 			if (rtnl_rtscope_a2n(&scope, *argv)) {
 				if (strcmp(*argv, "all") != 0) {
-					invarg(*argv, "scope");
+					invarg_1_to_2(*argv, "scope");
 				}
 				scope = RT_SCOPE_NOWHERE;
 				G_filter.scopemask = 0;
@@ -539,7 +535,7 @@ int FAST_FUNC ipaddr_list_or_flush(char **argv, int flush)
 					continue;
 				if (G_filter.pfx.family || G_filter.label) {
 					struct rtattr *tb[IFA_MAX+1];
-					memset(tb, 0, sizeof(tb));
+					//memset(tb, 0, sizeof(tb)); - parse_rtattr does this
 					parse_rtattr(tb, IFA_MAX, IFA_RTA(ifa), IFA_PAYLOAD(n));
 					if (!tb[IFA_LOCAL])
 						tb[IFA_LOCAL] = tb[IFA_ADDRESS];
@@ -596,9 +592,13 @@ static int default_scope(inet_prefix *lcl)
 /* Return value becomes exitcode. It's okay to not return at all */
 static int ipaddr_modify(int cmd, int flags, char **argv)
 {
+	/* If you add stuff here, update ipaddr_full_usage */
 	static const char option[] ALIGN1 =
 		"peer\0""remote\0""broadcast\0""brd\0"
 		"anycast\0""scope\0""dev\0""label\0""local\0";
+#define option_peer      option
+#define option_broadcast (option           + sizeof("peer") + sizeof("remote"))
+#define option_anycast   (option_broadcast + sizeof("broadcast") + sizeof("brd"))
 	struct rtnl_handle rth;
 	struct {
 		struct nlmsghdr  n;
@@ -630,7 +630,7 @@ static int ipaddr_modify(int cmd, int flags, char **argv)
 
 		if (arg <= 1) { /* peer, remote */
 			if (peer_len) {
-				duparg("peer", *argv);
+				duparg(option_peer, *argv);
 			}
 			get_prefix(&peer, *argv, req.ifa.ifa_family);
 			peer_len = peer.bytelen;
@@ -642,7 +642,7 @@ static int ipaddr_modify(int cmd, int flags, char **argv)
 		} else if (arg <= 3) { /* broadcast, brd */
 			inet_prefix addr;
 			if (brd_len) {
-				duparg("broadcast", *argv);
+				duparg(option_broadcast, *argv);
 			}
 			if (LONE_CHAR(*argv, '+')) {
 				brd_len = -1;
@@ -658,7 +658,7 @@ static int ipaddr_modify(int cmd, int flags, char **argv)
 		} else if (arg == 4) { /* anycast */
 			inet_prefix addr;
 			if (any_len) {
-				duparg("anycast", *argv);
+				duparg(option_anycast, *argv);
 			}
 			get_addr(&addr, *argv, req.ifa.ifa_family);
 			if (req.ifa.ifa_family == AF_UNSPEC) {
@@ -669,7 +669,7 @@ static int ipaddr_modify(int cmd, int flags, char **argv)
 		} else if (arg == 5) { /* scope */
 			uint32_t scope = 0;
 			if (rtnl_rtscope_a2n(&scope, *argv)) {
-				invarg(*argv, "scope");
+				invarg_1_to_2(*argv, "scope");
 			}
 			req.ifa.ifa_scope = scope;
 			scoped = 1;
@@ -748,10 +748,13 @@ int FAST_FUNC do_ipaddr(char **argv)
 		/* 0    1         2      3          4         5       6       7      8 */
 		"add\0""change\0""chg\0""replace\0""delete\0""list\0""show\0""lst\0""flush\0";
 	int cmd = 2;
+
+	INIT_G();
+
 	if (*argv) {
 		cmd = index_in_substrings(commands, *argv);
 		if (cmd < 0)
-			invarg(*argv, applet_name);
+			invarg_1_to_2(*argv, applet_name);
 		argv++;
 		if (cmd <= 4) {
 			return ipaddr_modify(

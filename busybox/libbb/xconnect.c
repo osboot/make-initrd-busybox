@@ -6,7 +6,6 @@
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
-
 #include <sys/types.h>
 #include <sys/socket.h> /* netinet/in.h needs it */
 #include <netinet/in.h>
@@ -496,12 +495,15 @@ char* FAST_FUNC xmalloc_sockaddr2hostonly_noport(const struct sockaddr *sa)
 {
 	return sockaddr2str(sa, NI_NAMEREQD | IGNORE_PORT);
 }
+#ifndef NI_NUMERICSCOPE
+# define NI_NUMERICSCOPE 0
+#endif
 char* FAST_FUNC xmalloc_sockaddr2dotted(const struct sockaddr *sa)
 {
-	return sockaddr2str(sa, NI_NUMERICHOST);
+	return sockaddr2str(sa, NI_NUMERICHOST | NI_NUMERICSCOPE);
 }
 
 char* FAST_FUNC xmalloc_sockaddr2dotted_noport(const struct sockaddr *sa)
 {
-	return sockaddr2str(sa, NI_NUMERICHOST | IGNORE_PORT);
+	return sockaddr2str(sa, NI_NUMERICHOST | NI_NUMERICSCOPE | IGNORE_PORT);
 }

@@ -16,48 +16,36 @@
  * between different systems
  * http://www.unix-systems.org/single_unix_specification_v2/xcu/ar.html
  */
-
 //config:config AR
-//config:	bool "ar"
+//config:	bool "ar (9.5 kb)"
 //config:	default n  # needs to be improved to be able to replace binutils ar
 //config:	help
-//config:	  ar is an archival utility program used to create, modify, and
-//config:	  extract contents from archives. An archive is a single file holding
-//config:	  a collection of other files in a structure that makes it possible to
-//config:	  retrieve the original individual files (called archive members).
-//config:	  The original files' contents, mode (permissions), timestamp, owner,
-//config:	  and group are preserved in the archive, and can be restored on
-//config:	  extraction.
+//config:	ar is an archival utility program used to create, modify, and
+//config:	extract contents from archives. In practice, it is used exclusively
+//config:	for object module archives used by compilers.
 //config:
-//config:	  The stored filename is limited to 15 characters. (for more information
-//config:	  see long filename support).
-//config:	  ar has 60 bytes of overheads for every stored file.
-//config:
-//config:	  This implementation of ar can extract archives, it cannot create or
-//config:	  modify them.
-//config:	  On an x86 system, the ar applet adds about 1K.
-//config:
-//config:	  Unless you have a specific application which requires ar, you should
-//config:	  probably say N here.
+//config:	Unless you have a specific application which requires ar, you should
+//config:	probably say N here: most compilers come with their own ar utility.
 //config:
 //config:config FEATURE_AR_LONG_FILENAMES
-//config:	bool "Support for long filenames (not needed for debs)"
+//config:	bool "Support long filenames (not needed for debs)"
 //config:	default y
 //config:	depends on AR
 //config:	help
-//config:	  By default the ar format can only store the first 15 characters
-//config:	  of the filename, this option removes that limitation.
-//config:	  It supports the GNU ar long filename method which moves multiple long
-//config:	  filenames into a the data section of a new ar entry.
+//config:	By default the ar format can only store the first 15 characters
+//config:	of the filename, this option removes that limitation.
+//config:	It supports the GNU ar long filename method which moves multiple long
+//config:	filenames into a the data section of a new ar entry.
 //config:
 //config:config FEATURE_AR_CREATE
 //config:	bool "Support archive creation"
 //config:	default y
 //config:	depends on AR
 //config:	help
-//config:	  This enables archive creation (-c and -r) with busybox ar.
+//config:	This enables archive creation (-c and -r) with busybox ar.
 
 //applet:IF_AR(APPLET(ar, BB_DIR_USR_BIN, BB_SUID_DROP))
+
 //kbuild:lib-$(CONFIG_AR) += ar.o
 
 //usage:#define ar_trivial_usage
@@ -252,11 +240,16 @@ int ar_main(int argc UNUSED_PARAM, char **argv)
 
 	archive_handle = init_handle();
 
-	/* --: prepend '-' to the first argument if required */
-	/* -1: at least one param is reqd */
-	/* one of p,t,x[,r] is required */
-	opt_complementary = "--:-1:p:t:x"IF_FEATURE_AR_CREATE(":r");
-	opt = getopt32(argv, "voc""ptx"IF_FEATURE_AR_CREATE("r"));
+	/* prepend '-' to the first argument if required */
+	if (argv[1] && argv[1][0] != '-' && argv[1][0] != '\0')
+		argv[1] = xasprintf("-%s", argv[1]);
+	opt = getopt32(argv, "^"
+		"voc""ptx"IF_FEATURE_AR_CREATE("r")
+		"\0"
+		/* -1: at least one arg is reqd */
+		/* one of p,t,x[,r] is required */
+		"-1:p:t:x"IF_FEATURE_AR_CREATE(":r")
+	);
 	argv += optind;
 
 	t = opt / FIRST_CMD;

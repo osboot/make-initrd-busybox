@@ -7,8 +7,33 @@
  * Copyright (C) 2007 by Tito Ragusa <farmatito@tiscali.it>
  *
  * Licensed under GPLv2, see file LICENSE in this source tree.
- *
  */
+//config:config DELUSER
+//config:	bool "deluser (8.4 kb)"
+//config:	default y
+//config:	help
+//config:	Utility for deleting a user account.
+//config:
+//config:config DELGROUP
+//config:	bool "delgroup (5.6 kb)"
+//config:	default y
+//config:	help
+//config:	Utility for deleting a group account.
+//config:
+//config:config FEATURE_DEL_USER_FROM_GROUP
+//config:	bool "Support removing users from groups"
+//config:	default y
+//config:	depends on DELGROUP
+//config:	help
+//config:	If called with two non-option arguments, deluser
+//config:	or delgroup will remove an user from a specified group.
+
+//                   APPLET_NOEXEC:name      main     location         suid_type     help
+//applet:IF_DELUSER( APPLET_NOEXEC(deluser,  deluser, BB_DIR_USR_SBIN, BB_SUID_DROP, deluser))
+//applet:IF_DELGROUP(APPLET_NOEXEC(delgroup, deluser, BB_DIR_USR_SBIN, BB_SUID_DROP, delgroup))
+
+//kbuild:lib-$(CONFIG_DELUSER) += deluser.o
+//kbuild:lib-$(CONFIG_DELGROUP) += deluser.o
 
 //usage:#define deluser_trivial_usage
 //usage:       IF_LONG_OPTS("[--remove-home] ") "USER"
@@ -43,9 +68,8 @@ int deluser_main(int argc, char **argv)
 #else
 	int opt_delhome = 0;
 	if (do_deluser) {
-		applet_long_options =
-			"remove-home\0" No_argument "\xff";
-		opt_delhome = getopt32(argv, "");
+		opt_delhome = getopt32long(argv, "",
+				"remove-home\0" No_argument "\xff");
 		argv += opt_delhome;
 		argc -= opt_delhome;
 	}

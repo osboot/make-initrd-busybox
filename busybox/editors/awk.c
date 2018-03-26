@@ -6,32 +6,30 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
-
 //config:config AWK
-//config:	bool "awk"
+//config:	bool "awk (22 kb)"
 //config:	default y
 //config:	help
-//config:	  Awk is used as a pattern scanning and processing language. This is
-//config:	  the BusyBox implementation of that programming language.
+//config:	Awk is used as a pattern scanning and processing language.
 //config:
 //config:config FEATURE_AWK_LIBM
 //config:	bool "Enable math functions (requires libm)"
 //config:	default y
 //config:	depends on AWK
 //config:	help
-//config:	  Enable math functions of the Awk programming language.
-//config:	  NOTE: This will require libm to be present for linking.
+//config:	Enable math functions of the Awk programming language.
+//config:	NOTE: This requires libm to be present for linking.
 //config:
 //config:config FEATURE_AWK_GNU_EXTENSIONS
 //config:	bool "Enable a few GNU extensions"
 //config:	default y
 //config:	depends on AWK
 //config:	help
-//config:	  Enable a few features from gawk:
-//config:	  * command line option -e AWK_PROGRAM
-//config:	  * simultaneous use of -f and -e on the command line.
-//config:	    This enables the use of awk library files.
-//config:	    Ex: awk -f mylib.awk -e '{print myfunction($1);}' ...
+//config:	Enable a few features from gawk:
+//config:	* command line option -e AWK_PROGRAM
+//config:	* simultaneous use of -f and -e on the command line.
+//config:	This enables the use of awk library files.
+//config:	Example: awk -f mylib.awk -e '{print myfunction($1);}' ...
 
 //applet:IF_AWK(APPLET_NOEXEC(awk, awk, BB_DIR_USR_BIN, BB_SUID_DROP, awk))
 
@@ -71,13 +69,14 @@
 #endif
 
 
-#define OPTSTR_AWK \
-	"F:v:f:" \
-	IF_FEATURE_AWK_GNU_EXTENSIONS("e:") \
+/* "+": stop on first non-option:
+ * $ awk 'BEGIN { for(i=1; i<ARGC; ++i) { print i ": " ARGV[i] }}' -argz
+ * 1: -argz
+ */
+#define OPTSTR_AWK "+" \
+	"F:v:*f:*" \
+	IF_FEATURE_AWK_GNU_EXTENSIONS("e:*") \
 	"W:"
-#define OPTCOMPLSTR_AWK \
-	"v::f::" \
-	IF_FEATURE_AWK_GNU_EXTENSIONS("e::")
 enum {
 	OPTBIT_F,	/* define field separator */
 	OPTBIT_v,	/* define variable */
@@ -234,7 +233,7 @@ typedef struct tsplitter_s {
  */
 #define	TC_LENGTH	(1 << 20)
 #define	TC_GETLINE	(1 << 21)
-#define	TC_FUNCDECL	(1 << 22)		/* `function' `func' */
+#define	TC_FUNCDECL	(1 << 22)		/* 'function' 'func' */
 #define	TC_BEGIN	(1 << 23)
 #define	TC_END		(1 << 24)
 #define	TC_EOF		(1 << 25)
@@ -1517,7 +1516,7 @@ static void chain_group(void)
 			next_token(TC_SEQSTART);
 			n2 = parse_expr(TC_SEMICOL | TC_SEQTERM);
 			if (t_tclass & TC_SEQTERM) {	/* for-in */
-				if ((n2->info & OPCLSMASK) != OC_IN)
+				if (!n2 || (n2->info & OPCLSMASK) != OC_IN)
 					syntax_error(EMSG_UNEXP_TOKEN);
 				n = chain_node(OC_WALKINIT | VV);
 				n->l.n = n2->l.n;
@@ -3209,7 +3208,6 @@ int awk_main(int argc, char **argv)
 			*s1 = '=';
 		}
 	}
-	opt_complementary = OPTCOMPLSTR_AWK;
 	opt = getopt32(argv, OPTSTR_AWK, &opt_F, &list_v, &list_f, IF_FEATURE_AWK_GNU_EXTENSIONS(&list_e,) NULL);
 	argv += optind;
 	argc -= optind;
