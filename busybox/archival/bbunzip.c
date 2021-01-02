@@ -21,19 +21,6 @@
 #include "libbb.h"
 #include "bb_archive.h"
 
-/* Note: must be kept in sync with archival/lzop.c */
-enum {
-	OPT_STDOUT     = 1 << 0,
-	OPT_FORCE      = 1 << 1,
-	/* only some decompressors: */
-	OPT_KEEP       = 1 << 2,
-	OPT_VERBOSE    = 1 << 3,
-	OPT_QUIET      = 1 << 4,
-	OPT_DECOMPRESS = 1 << 5,
-	OPT_TEST       = 1 << 6,
-	SEAMLESS_MAGIC = (1 << 31) * ENABLE_ZCAT * SEAMLESS_COMPRESSION,
-};
-
 static
 int open_to_or_warn(int to_fd, const char *filename, int flags, int mode)
 {
@@ -72,7 +59,7 @@ int FAST_FUNC bbunpack(char **argv,
 
 		/* Open src */
 		if (filename) {
-			if (!(option_mask32 & SEAMLESS_MAGIC)) {
+			if (!(option_mask32 & BBUNPK_SEAMLESS_MAGIC)) {
 				if (stat(filename, &stat_buf) != 0) {
  err_name:
 					bb_simple_perror_msg(filename);
@@ -91,15 +78,15 @@ int FAST_FUNC bbunpack(char **argv,
 				xmove_fd(fd, STDIN_FILENO);
 			}
 		} else
-		if (option_mask32 & SEAMLESS_MAGIC) {
+		if (option_mask32 & BBUNPK_SEAMLESS_MAGIC) {
 			/* "clever zcat" on stdin */
 			if (setup_unzip_on_fd(STDIN_FILENO, /*fail_if_not_compressed*/ 1))
 				goto err;
 		}
 
 		/* Special cases: test, stdout */
-		if (option_mask32 & (OPT_STDOUT|OPT_TEST)) {
-			if (option_mask32 & OPT_TEST)
+		if (option_mask32 & (BBUNPK_OPT_STDOUT|BBUNPK_OPT_TEST)) {
+			if (option_mask32 & BBUNPK_OPT_TEST)
 				if (open_to_or_warn(STDOUT_FILENO, bb_dev_null, O_WRONLY, 0))
 					xfunc_die();
 			filename = NULL;
@@ -114,7 +101,7 @@ int FAST_FUNC bbunpack(char **argv,
 			}
 
 			/* -f: overwrite existing output files */
-			if (option_mask32 & OPT_FORCE) {
+			if (option_mask32 & BBUNPK_OPT_FORCE) {
 				unlink(new_name);
 			}
 
@@ -126,12 +113,12 @@ int FAST_FUNC bbunpack(char **argv,
 		}
 
 		/* Check that the input is sane */
-		if (!(option_mask32 & OPT_FORCE) && isatty(STDIN_FILENO)) {
-			bb_error_msg_and_die("compressed data not read from terminal, "
+		if (!(option_mask32 & BBUNPK_OPT_FORCE) && isatty(STDIN_FILENO)) {
+			bb_simple_error_msg_and_die("compressed data not read from terminal, "
 					"use -f to force it");
 		}
 
-		if (!(option_mask32 & SEAMLESS_MAGIC)) {
+		if (!(option_mask32 & BBUNPK_SEAMLESS_MAGIC)) {
 			init_transformer_state(&xstate);
 			/*xstate.signature_skipped = 0; - already is */
 			/*xstate.src_fd = STDIN_FILENO; - already is */
@@ -145,7 +132,7 @@ int FAST_FUNC bbunpack(char **argv,
 				xfunc_die();
 		}
 
-		if (!(option_mask32 & OPT_STDOUT))
+		if (!(option_mask32 & BBUNPK_OPT_STDOUT))
 			xclose(STDOUT_FILENO); /* with error check! */
 
 		if (filename) {
@@ -176,7 +163,7 @@ int FAST_FUNC bbunpack(char **argv,
 				}
 				/* Extreme bloat for gunzip compat */
 				/* Some users do want this info... */
-				if (ENABLE_DESKTOP && (option_mask32 & OPT_VERBOSE)) {
+				if (ENABLE_DESKTOP && (option_mask32 & BBUNPK_OPT_VERBOSE)) {
 					unsigned percent = status
 						? ((uoff_t)stat_buf.st_size * 100u / (unsigned long long)status)
 						: 0;
@@ -188,7 +175,7 @@ int FAST_FUNC bbunpack(char **argv,
 				}
 				/* Delete _source_ file */
 				del = filename;
-				if (option_mask32 & OPT_KEEP) /* ... unless -k */
+				if (option_mask32 & BBUNPK_OPT_KEEP) /* ... unless -k */
 					del = NULL;
 			}
 			if (del)
@@ -199,7 +186,7 @@ int FAST_FUNC bbunpack(char **argv,
 		}
 	} while (*argv && *++argv);
 
-	if (option_mask32 & OPT_STDOUT)
+	if (option_mask32 & BBUNPK_OPT_STDOUT)
 		xclose(STDOUT_FILENO); /* with error check! */
 
 	return exitcode;
@@ -312,7 +299,7 @@ int uncompress_main(int argc UNUSED_PARAM, char **argv)
 //usage:       "Decompress to stdout"
 
 //config:config GUNZIP
-//config:	bool "gunzip (12 kb)"
+//config:	bool "gunzip (11 kb)"
 //config:	default y
 //config:	select FEATURE_GZIP_DECOMPRESS
 //config:	help
@@ -321,7 +308,7 @@ int uncompress_main(int argc UNUSED_PARAM, char **argv)
 //config:	an archive, without decompressing it.
 //config:
 //config:config ZCAT
-//config:	bool "zcat (25 kb)"
+//config:	bool "zcat (24 kb)"
 //config:	default y
 //config:	select FEATURE_GZIP_DECOMPRESS
 //config:	help
@@ -389,9 +376,9 @@ int gunzip_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int gunzip_main(int argc UNUSED_PARAM, char **argv)
 {
 #if ENABLE_FEATURE_GUNZIP_LONG_OPTIONS
-	getopt32long(argv, "cfkvqdtn", gunzip_longopts);
+	getopt32long(argv, BBUNPK_OPTSTR "dtn", gunzip_longopts);
 #else
-	getopt32(argv, "cfkvqdtn");
+	getopt32(argv, BBUNPK_OPTSTR "dtn");
 #endif
 	argv += optind;
 
@@ -399,8 +386,8 @@ int gunzip_main(int argc UNUSED_PARAM, char **argv)
 	 * Normally, "zcat" is just "gunzip -c".
 	 * But if seamless magic is enabled, then we are much more clever.
 	 */
-	if (ENABLE_ZCAT && (!ENABLE_GUNZIP || applet_name[1] == 'c'))
-		option_mask32 |= OPT_STDOUT | SEAMLESS_MAGIC;
+	if (ENABLE_ZCAT && applet_name[1] == 'c')
+		option_mask32 |= BBUNPK_OPT_STDOUT | BBUNPK_SEAMLESS_MAGIC;
 
 	return bbunpack(argv, unpack_gz_stream, make_new_name_gunzip, /*unused:*/ NULL);
 }
@@ -426,7 +413,7 @@ int gunzip_main(int argc UNUSED_PARAM, char **argv)
 //usage:       "Decompress to stdout"
 
 //config:config BUNZIP2
-//config:	bool "bunzip2 (8.8 kb)"
+//config:	bool "bunzip2 (8.7 kb)"
 //config:	default y
 //config:	select FEATURE_BZIP2_DECOMPRESS
 //config:	help
@@ -440,7 +427,7 @@ int gunzip_main(int argc UNUSED_PARAM, char **argv)
 //config:	should probably say N here.
 //config:
 //config:config BZCAT
-//config:	bool "bzcat (8.8 kb)"
+//config:	bool "bzcat (8.7 kb)"
 //config:	default y
 //config:	select FEATURE_BZIP2_DECOMPRESS
 //config:	help
@@ -453,10 +440,10 @@ int gunzip_main(int argc UNUSED_PARAM, char **argv)
 int bunzip2_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int bunzip2_main(int argc UNUSED_PARAM, char **argv)
 {
-	getopt32(argv, "cfkvqdt");
+	getopt32(argv, BBUNPK_OPTSTR "dt");
 	argv += optind;
 	if (ENABLE_BZCAT && (!ENABLE_BUNZIP2 || applet_name[2] == 'c')) /* bzcat */
-		option_mask32 |= OPT_STDOUT;
+		option_mask32 |= BBUNPK_OPT_STDOUT;
 
 	return bbunpack(argv, unpack_bz2_stream, make_new_name_generic, "bz2");
 }
@@ -494,7 +481,7 @@ int bunzip2_main(int argc UNUSED_PARAM, char **argv)
 //usage:       "Decompress to stdout"
 
 //config:config UNLZMA
-//config:	bool "unlzma (8.6 kb)"
+//config:	bool "unlzma (7.5 kb)"
 //config:	default y
 //config:	help
 //config:	unlzma is a compression utility using the Lempel-Ziv-Markov chain
@@ -503,7 +490,7 @@ int bunzip2_main(int argc UNUSED_PARAM, char **argv)
 //config:	compressors.
 //config:
 //config:config LZCAT
-//config:	bool "lzcat (8.5 kb)"
+//config:	bool "lzcat (7.5 kb)"
 //config:	default y
 //config:	help
 //config:	Alias to "unlzma -c".
@@ -526,15 +513,15 @@ int bunzip2_main(int argc UNUSED_PARAM, char **argv)
 int unlzma_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int unlzma_main(int argc UNUSED_PARAM, char **argv)
 {
-	IF_LZMA(int opts =) getopt32(argv, "cfkvqdt");
+	IF_LZMA(int opts =) getopt32(argv, BBUNPK_OPTSTR "dt");
 # if ENABLE_LZMA
 	/* lzma without -d or -t? */
-	if (applet_name[2] == 'm' && !(opts & (OPT_DECOMPRESS|OPT_TEST)))
+	if (applet_name[2] == 'm' && !(opts & (BBUNPK_OPT_DECOMPRESS|BBUNPK_OPT_TEST)))
 		bb_show_usage();
 # endif
 	/* lzcat? */
 	if (ENABLE_LZCAT && applet_name[2] == 'c')
-		option_mask32 |= OPT_STDOUT;
+		option_mask32 |= BBUNPK_OPT_STDOUT;
 
 	argv += optind;
 	return bbunpack(argv, unpack_lzma_stream, make_new_name_generic, "lzma");
@@ -549,6 +536,7 @@ int unlzma_main(int argc UNUSED_PARAM, char **argv)
 //usage:     "\n	-c	Write to stdout"
 //usage:     "\n	-f	Force"
 //usage:     "\n	-k	Keep input files"
+//usage:     "\n	-t	Test file integrity"
 //usage:
 //usage:#define xz_trivial_usage
 //usage:       "-d [-cfk] [FILE]..."
@@ -558,6 +546,7 @@ int unlzma_main(int argc UNUSED_PARAM, char **argv)
 //usage:     "\n	-c	Write to stdout"
 //usage:     "\n	-f	Force"
 //usage:     "\n	-k	Keep input files"
+//usage:     "\n	-t	Test file integrity"
 //usage:
 //usage:#define xzcat_trivial_usage
 //usage:       "[FILE]..."
@@ -594,15 +583,15 @@ int unlzma_main(int argc UNUSED_PARAM, char **argv)
 int unxz_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
 int unxz_main(int argc UNUSED_PARAM, char **argv)
 {
-	IF_XZ(int opts =) getopt32(argv, "cfkvqdt");
+	IF_XZ(int opts =) getopt32(argv, BBUNPK_OPTSTR "dt");
 # if ENABLE_XZ
 	/* xz without -d or -t? */
-	if (applet_name[2] == '\0' && !(opts & (OPT_DECOMPRESS|OPT_TEST)))
+	if (applet_name[2] == '\0' && !(opts & (BBUNPK_OPT_DECOMPRESS|BBUNPK_OPT_TEST)))
 		bb_show_usage();
 # endif
 	/* xzcat? */
 	if (ENABLE_XZCAT && applet_name[2] == 'c')
-		option_mask32 |= OPT_STDOUT;
+		option_mask32 |= BBUNPK_OPT_STDOUT;
 
 	argv += optind;
 	return bbunpack(argv, unpack_xz_stream, make_new_name_generic, "xz");

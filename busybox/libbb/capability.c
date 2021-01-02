@@ -3,7 +3,8 @@
  *
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
-//kbuild:lib-$(CONFIG_PLATFORM_LINUX) += capability.o
+//kbuild:lib-$(CONFIG_FEATURE_SETPRIV_CAPABILITIES) += capability.o
+//kbuild:lib-$(CONFIG_RUN_INIT) += capability.o
 
 #include <linux/capability.h>
 // #include <sys/capability.h>
@@ -66,7 +67,7 @@ unsigned FAST_FUNC cap_name_to_number(const char *cap)
 		goto found;
 	}
 	for (i = 0; i < ARRAY_SIZE(capabilities); i++) {
-		if (strcasecmp(capabilities[i], cap) != 0)
+		if (strcasecmp(capabilities[i], cap) == 0)
 			goto found;
 	}
 	bb_error_msg_and_die("unknown capability '%s'", cap);
@@ -118,7 +119,7 @@ void FAST_FUNC getcaps(void *arg)
 			caps->u32s = _LINUX_CAPABILITY_U32S_3;
 			break;
 		default:
-			bb_error_msg_and_die("unsupported capability version");
+			bb_simple_error_msg_and_die("unsupported capability version");
 	}
 
 	if (capget(&caps->header, caps->data) != 0)

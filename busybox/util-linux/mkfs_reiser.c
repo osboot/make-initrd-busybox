@@ -28,22 +28,6 @@
 #include "libbb.h"
 #include <linux/fs.h>
 
-char BUG_wrong_field_size(void);
-#define STORE_LE(field, value) \
-do { \
-	if (sizeof(field) == 4) \
-		field = SWAP_LE32(value); \
-	else if (sizeof(field) == 2) \
-		field = SWAP_LE16(value); \
-	else if (sizeof(field) == 1) \
-		field = (value); \
-	else \
-		BUG_wrong_field_size(); \
-} while (0)
-
-#define FETCH_LE32(field) \
-	(sizeof(field) == 4 ? SWAP_LE32(field) : BUG_wrong_field_size())
-
 struct journal_params {
 	uint32_t jp_journal_1st_block;      /* where does journal start from on its device */
 	uint32_t jp_journal_dev;            /* journal device st_rdev */
@@ -194,7 +178,7 @@ int mkfs_reiser_main(int argc UNUSED_PARAM, char **argv)
 	// N.B. what if we format a file? find_mount_point will return false negative since
 	// it is loop block device which is mounted!
 	if (find_mount_point(argv[0], 0))
-		bb_error_msg_and_die("can't format mounted filesystem");
+		bb_simple_error_msg_and_die("can't format mounted filesystem");
 
 	// open the device, get size in blocks
 	blocks = get_volume_size_in_bytes(fd, argv[1], blocksize, /*extend:*/ 1) / blocksize;

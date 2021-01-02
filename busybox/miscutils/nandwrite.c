@@ -8,14 +8,14 @@
  * TODO: add support for large (>4GB) MTD devices
  */
 //config:config NANDWRITE
-//config:	bool "nandwrite (5.9 kb)"
+//config:	bool "nandwrite (4.8 kb)"
 //config:	default y
 //config:	select PLATFORM_LINUX
 //config:	help
 //config:	Write to the specified MTD device, with bad blocks awareness
 //config:
 //config:config NANDDUMP
-//config:	bool "nanddump (6.3 kb)"
+//config:	bool "nanddump (5.2 kb)"
 //config:	default y
 //config:	select PLATFORM_LINUX
 //config:	help
@@ -52,6 +52,15 @@
 
 #include "libbb.h"
 #include <mtd/mtd-user.h>
+
+/* Old headers call it MTD_MODE_RAW.
+ * FIXME: In kernel headers, MTD_FILE_MODE_RAW is not a define,
+ * it's an enum. How I can test for existence of an enum?
+ */
+#if !defined(MTD_FILE_MODE_RAW)
+# define MTD_FILE_MODE_RAW 3
+#endif
+
 
 #define IS_NANDDUMP  (ENABLE_NANDDUMP && (!ENABLE_NANDWRITE || (applet_name[4] == 'd')))
 #define IS_NANDWRITE (ENABLE_NANDWRITE && (!ENABLE_NANDDUMP || (applet_name[4] != 'd')))
@@ -92,7 +101,7 @@ static unsigned next_good_eraseblock(int fd, struct mtd_info_user *meminfo,
 
 		if (block_offset >= meminfo->size) {
 			if (IS_NANDWRITE)
-				bb_error_msg_and_die("not enough space in MTD device");
+				bb_simple_error_msg_and_die("not enough space in MTD device");
 			return block_offset; /* let the caller exit */
 		}
 		offs = block_offset;
@@ -165,7 +174,7 @@ int nandwrite_main(int argc UNUSED_PARAM, char **argv)
 	meminfo_writesize = meminfo.writesize;
 
 	if (mtdoffset & (meminfo_writesize - 1))
-		bb_error_msg_and_die("start address is not page aligned");
+		bb_simple_error_msg_and_die("start address is not page aligned");
 
 	filebuf = xmalloc(meminfo_writesize);
 	oobbuf = xmalloc(meminfo.oobsize);
@@ -239,9 +248,9 @@ int nandwrite_main(int argc UNUSED_PARAM, char **argv)
 		}
 		if (cnt < meminfo_writesize) {
 			if (IS_NANDDUMP)
-				bb_error_msg_and_die("short read");
+				bb_simple_error_msg_and_die("short read");
 			if (!(opts & OPT_p))
-				bb_error_msg_and_die("input size is not rounded up to page size, "
+				bb_simple_error_msg_and_die("input size is not rounded up to page size, "
 						"use -p to zero pad");
 			/* zero pad to end of write block */
 			memset(filebuf + cnt, 0, meminfo_writesize - cnt);
@@ -264,7 +273,7 @@ int nandwrite_main(int argc UNUSED_PARAM, char **argv)
 		/* We filled entire MTD, but did we reach EOF on input? */
 		if (full_read(STDIN_FILENO, filebuf, meminfo_writesize) != 0) {
 			/* no */
-			bb_error_msg_and_die("not enough space in MTD device");
+			bb_simple_error_msg_and_die("not enough space in MTD device");
 		}
 	}
 

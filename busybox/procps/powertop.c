@@ -9,7 +9,7 @@
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
 //config:config POWERTOP
-//config:	bool "powertop (9.1 kb)"
+//config:	bool "powertop (9.6 kb)"
 //config:	default y
 //config:	help
 //config:	Analyze power consumption on Intel-based laptops
@@ -657,7 +657,7 @@ static void show_timerstats(void)
 		}
 	} else {
 		bb_putchar('\n');
-		bb_error_msg("no stats available; run as root or"
+		bb_simple_error_msg("no stats available; run as root or"
 				" enable the timer_stats module");
 	}
 }
@@ -686,7 +686,7 @@ static void show_timerstats(void)
 //usage:       "Analyze power consumption on Intel-based laptops"
 
 int powertop_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-int powertop_main(int UNUSED_PARAM argc, char UNUSED_PARAM **argv)
+int powertop_main(int argc UNUSED_PARAM, char UNUSED_PARAM **argv)
 {
 	ullong cur_usage[MAX_CSTATE_COUNT];
 	ullong cur_duration[MAX_CSTATE_COUNT];
@@ -707,7 +707,7 @@ int powertop_main(int UNUSED_PARAM argc, char UNUSED_PARAM **argv)
 
 	/* Print warning when we don't have superuser privileges */
 	if (geteuid() != 0)
-		bb_error_msg("run as root to collect enough information");
+		bb_simple_error_msg("run as root to collect enough information");
 
 	/* Get number of CPUs */
 	G.total_cpus = get_cpu_count();

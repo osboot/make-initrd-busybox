@@ -1,6 +1,6 @@
 #
 # For a description of the syntax of this configuration file,
-# see scripts/kbuild/config-language.txt.
+# see docs/Kconfig-language.txt.
 #
 
 mainmenu "Configuration"
@@ -12,7 +12,7 @@ config HAVE_DOT_CONFIG
 menu "Settings"
 
 config DESKTOP
-	bool "Enable compatibility for full-blown desktop systems"
+	bool "Enable compatibility for full-blown desktop systems (8kb)"
 	default y
 	help
 	Enable applet options and features which are not essential.
@@ -156,12 +156,13 @@ config FEATURE_PIDFILE
 config PID_FILE_PATH
 	string "Directory for pidfiles"
 	default "/var/run"
-	depends on FEATURE_PIDFILE
+	depends on FEATURE_PIDFILE || FEATURE_CROND_SPECIAL_TIMES
 	help
 	This is the default path where pidfiles are created.  Applets which
 	allow you to set the pidfile path on the command line will override
 	this value.  The option has no effect on applets that require you to
-	specify a pidfile path.
+	specify a pidfile path.  When crond has the 'Support special times'
+	option enabled, the 'crond.reboot' file is also stored here.
 
 config BUSYBOX
 	bool "Include busybox applet"
@@ -177,6 +178,11 @@ config BUSYBOX
 	busybox: applet not found
 
 	Running "busybox APPLET [ARGS...]" will still work, of course.
+
+config FEATURE_SHOW_SCRIPT
+	bool "Support --show SCRIPT"
+	default y
+	depends on BUSYBOX
 
 config FEATURE_INSTALLER
 	bool "Support --install [-s] to install applet links at runtime"
@@ -333,6 +339,15 @@ config FEATURE_CLEAN_UP
 
 	Don't enable this unless you have a really good reason to clean
 	things up manually.
+
+config FEATURE_SYSLOG_INFO
+	bool "Support LOG_INFO level syslog messages"
+	default y
+	depends on FEATURE_SYSLOG
+	help
+	Applets which send their output to syslog use either LOG_INFO or
+	LOG_ERR log levels, but by disabling this option all messages will
+	be logged at the LOG_ERR level, saving just under 200 bytes.
 
 # These are auto-selected by other options
 
@@ -518,6 +533,14 @@ config USE_PORTABLE_CODE
 	compiler other than gcc.
 	If you do use gcc, this option may needlessly increase code size.
 
+config STACK_OPTIMIZATION_386
+	bool "Use -mpreferred-stack-boundary=2 on i386 arch"
+	default y
+	help
+	This option makes for smaller code, but some libc versions
+	do not work with it (they use SSE instructions without
+	ensuring stack alignment).
+
 comment 'Installation Options ("make install" behavior)'
 
 choice
@@ -638,6 +661,19 @@ config WERROR
 	This adds -Werror to gcc command line.
 
 	Most people should answer N.
+
+config WARN_SIMPLE_MSG
+	bool "Warn about single parameter bb_xx_msg calls"
+	default n
+	help
+	This will cause warnings to be shown for any instances of
+	bb_error_msg(), bb_error_msg_and_die(), bb_perror_msg(),
+	bb_perror_msg_and_die(), bb_herror_msg() or bb_herror_msg_and_die()
+	being called with a single parameter. In these cases the equivalent
+	bb_simple_xx_msg function should be used instead.
+	Note that use of STRERROR_FMT may give false positives.
+
+	If you aren't developing busybox, say N here.
 
 choice
 	prompt "Additional debugging library"

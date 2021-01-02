@@ -11,12 +11,13 @@
  * Major size reduction... over 50% (>1.5k) on i386.
  */
 //config:config CAL
-//config:	bool "cal (6.5 kb)"
+//config:	bool "cal (5.8 kb)"
 //config:	default y
 //config:	help
 //config:	cal is used to display a monthly calendar.
 
-//applet:IF_CAL(APPLET(cal, BB_DIR_USR_BIN, BB_SUID_DROP))
+//applet:IF_CAL(APPLET_NOEXEC(cal, cal, BB_DIR_USR_BIN, BB_SUID_DROP, cal))
+/* NOEXEC despite rare cases when it can be a "runner" (e.g. cal -n12000 takes you into years 30xx) */
 
 //kbuild:lib-$(CONFIG_CAL) += cal.o
 

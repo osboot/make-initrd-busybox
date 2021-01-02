@@ -7,7 +7,7 @@
  * Licensed under GPLv2, see file LICENSE in this source tree.
  */
 //config:config MPSTAT
-//config:	bool "mpstat (10 kb)"
+//config:	bool "mpstat (9.8 kb)"
 //config:	default y
 //config:	help
 //config:	Per-processor statistics
@@ -840,7 +840,7 @@ static int get_irqcpu_nr(const char *f, int max_irqs)
 //usage:     "\n	-u			Report CPU utilization"
 
 int mpstat_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-int mpstat_main(int UNUSED_PARAM argc, char **argv)
+int mpstat_main(int argc UNUSED_PARAM, char **argv)
 {
 	char *opt_irq_fmt;
 	char *opt_set_cpu;
@@ -931,7 +931,7 @@ int mpstat_main(int UNUSED_PARAM argc, char **argv)
 				/* Get CPU number */
 				unsigned n = xatoi_positive(t);
 				if (n >= G.cpu_nr)
-					bb_error_msg_and_die("not that many processors");
+					bb_simple_error_msg_and_die("not that many processors");
 				n++;
 				G.cpu_bitmap[n >> 3] |= 1 << (n & 7);
 			}

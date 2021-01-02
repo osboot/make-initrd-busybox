@@ -70,13 +70,20 @@
 #if ENABLE_UNICODE_SUPPORT
 # define BB_NUL ((wchar_t)0)
 # define CHAR_T wchar_t
-static bool BB_isspace(CHAR_T c) { return ((unsigned)c < 256 && isspace(c)); }
+static bool BB_isspace(CHAR_T c)
+{
+	return ((unsigned)c < 256 && isspace(c));
+}
 # if ENABLE_FEATURE_EDITING_VI
-static bool BB_isalnum_or_underscore(CHAR_T c) {
+static bool BB_isalnum_or_underscore(CHAR_T c)
+{
 	return ((unsigned)c < 256 && isalnum(c)) || c == '_';
 }
 # endif
-static bool BB_ispunct(CHAR_T c) { return ((unsigned)c < 256 && ispunct(c)); }
+static bool BB_ispunct(CHAR_T c)
+{
+	return ((unsigned)c < 256 && ispunct(c));
+}
 # undef isspace
 # undef isalnum
 # undef ispunct
@@ -92,7 +99,7 @@ static bool BB_ispunct(CHAR_T c) { return ((unsigned)c < 256 && ispunct(c)); }
 # if ENABLE_FEATURE_EDITING_VI
 static bool BB_isalnum_or_underscore(CHAR_T c)
 {
-	return ((unsigned)c < 256 && isalnum(c)) || c == '_';
+	return isalnum(c) || c == '_';
 }
 # endif
 # define BB_ispunct(c) ispunct(c)
@@ -151,9 +158,11 @@ struct lineedit_statics {
 	unsigned num_matches;
 #endif
 
+#if ENABLE_FEATURE_EDITING_WINCH
 	unsigned SIGWINCH_saved;
 	volatile unsigned SIGWINCH_count;
 	volatile smallint ok_to_redraw;
+#endif
 
 #if ENABLE_FEATURE_EDITING_VI
 # define DELBUFSIZ 128
@@ -165,8 +174,10 @@ struct lineedit_statics {
 	smallint sent_ESC_br6n;
 #endif
 
+#if ENABLE_FEATURE_EDITING_WINCH
 	/* Largish struct, keeping it last results in smaller code */
 	struct sigaction SIGWINCH_handler;
+#endif
 };
 
 /* See lineedit_ptr_hack.c */
@@ -192,7 +203,7 @@ extern struct lineedit_statics *const lineedit_ptr_to_statics;
 #define delbuf           (S.delbuf          )
 
 #define INIT_S() do { \
-	(*(struct lineedit_statics**)&lineedit_ptr_to_statics) = xzalloc(sizeof(S)); \
+	(*(struct lineedit_statics**)not_const_pp(&lineedit_ptr_to_statics)) = xzalloc(sizeof(S)); \
 	barrier(); \
 	cmdedit_termw = 80; \
 	IF_USERNAME_OR_HOMEDIR(home_pwd_buf = (char*)null_str;) \
@@ -426,7 +437,8 @@ static void put_till_end_and_adv_cursor(void)
 static void goto_new_line(void)
 {
 	put_till_end_and_adv_cursor();
-	if (cmdedit_x != 0)
+	/* "cursor == 0" is only if prompt is "" and user input is empty */
+	if (cursor == 0 || cmdedit_x != 0)
 		bb_putchar('\n');
 }
 
@@ -801,18 +813,29 @@ static NOINLINE unsigned complete_cmd_dir_file(const char *command, int type)
 	}
 	pf_len = strlen(pfind);
 
-# if ENABLE_FEATURE_SH_STANDALONE && NUM_APPLETS != 1
 	if (type == FIND_EXE_ONLY && !dirbuf) {
+# if ENABLE_FEATURE_SH_STANDALONE && NUM_APPLETS != 1
 		const char *p = applet_names;
-
 		while (*p) {
 			if (strncmp(pfind, p, pf_len) == 0)
 				add_match(xstrdup(p));
 			while (*p++ != '\0')
 				continue;
 		}
-	}
 # endif
+# if EDITING_HAS_get_exe_name
+		if (state->get_exe_name) {
+			i = 0;
+			for (;;) {
+				const char *b = state->get_exe_name(i++);
+				if (!b)
+					break;
+				if (strncmp(pfind, b, pf_len) == 0)
+					add_match(xstrdup(b));
+			}
+		}
+# endif
+	}
 
 	for (i = 0; i < npaths; i++) {
 		DIR *dir;
@@ -1081,7 +1104,7 @@ static void showfiles(void)
 			);
 		}
 		if (ENABLE_UNICODE_SUPPORT)
-			puts(printable_string(NULL, matches[n]));
+			puts(printable_string(matches[n]));
 		else
 			puts(matches[n]);
 	}
@@ -1368,6 +1391,16 @@ void FAST_FUNC show_history(const line_input_t *st)
 		printf("%4d %s\n", i, st->history[i]);
 }
 
+void FAST_FUNC free_line_input_t(line_input_t *n)
+{
+# if ENABLE_FEATURE_EDITING_SAVEHISTORY
+	int i = n->cnt_history;
+	while (i > 0)
+		free(n->history[--i]);
+#endif
+	free(n);
+}
+
 # if ENABLE_FEATURE_EDITING_SAVEHISTORY
 /* We try to ensure that concurrent additions to the history
  * do not overwrite each other.
@@ -1376,14 +1409,6 @@ void FAST_FUNC show_history(const line_input_t *st)
  * History file is trimmed lazily, when it grows several times longer
  * than configured MAX_HISTORY lines.
  */
-
-static void free_line_input_t(line_input_t *n)
-{
-	int i = n->cnt_history;
-	while (i > 0)
-		free(n->history[--i]);
-	free(n);
-}
 
 /* state->flags is already checked to be nonzero */
 static void load_history(line_input_t *st_parm)
@@ -2030,6 +2055,7 @@ static void parse_and_put_prompt(const char *prmt_ptr)
 }
 #endif
 
+#if ENABLE_FEATURE_EDITING_WINCH
 static void cmdedit_setwidth(void)
 {
 	int new_y;
@@ -2054,6 +2080,7 @@ static void win_changed(int nsig UNUSED_PARAM)
 		S.SIGWINCH_count++;
 	}
 }
+#endif
 
 static int lineedit_read_key(char *read_key_buffer, int timeout)
 {
@@ -2072,9 +2099,9 @@ static int lineedit_read_key(char *read_key_buffer, int timeout)
 		 *
 		 * Note: read_key sets errno to 0 on success.
 		 */
-		S.ok_to_redraw = 1;
+		IF_FEATURE_EDITING_WINCH(S.ok_to_redraw = 1;)
 		ic = read_key(STDIN_FILENO, read_key_buffer, timeout);
-		S.ok_to_redraw = 0;
+		IF_FEATURE_EDITING_WINCH(S.ok_to_redraw = 0;)
 		if (errno) {
 #if ENABLE_UNICODE_SUPPORT
 			if (errno == EAGAIN && unicode_idx != 0)
@@ -2302,6 +2329,18 @@ static int32_t reverse_i_search(int timeout)
 }
 #endif
 
+#if ENABLE_FEATURE_EDITING_WINCH
+static void sigaction2(int sig, struct sigaction *act)
+{
+	// Grr... gcc 8.1.1:
+	// "passing argument 3 to restrict-qualified parameter aliases with argument 2"
+	// dance around that...
+	struct sigaction *oact FIX_ALIASING;
+	oact = act;
+	sigaction(sig, act, oact);
+}
+#endif
+
 /* maxsize must be >= 2.
  * Returns:
  * -1 on read errors or EOF, or on bare Ctrl-D,
@@ -2362,13 +2401,14 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 		timeout = st->timeout;
 	}
 #if MAX_HISTORY > 0
+	if (state->flags & DO_HISTORY) {
 # if ENABLE_FEATURE_EDITING_SAVEHISTORY
-	if (state->hist_file)
-		if (state->cnt_history == 0)
-			load_history(state);
+		if (state->hist_file)
+			if (state->cnt_history == 0)
+				load_history(state);
 # endif
-	if (state->flags & DO_HISTORY)
 		state->cur_history = state->cnt_history;
+	}
 #endif
 
 	/* prepare before init handlers */
@@ -2408,11 +2448,12 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 	parse_and_put_prompt(prompt);
 	ask_terminal();
 
+#if ENABLE_FEATURE_EDITING_WINCH
 	/* Install window resize handler (NB: after *all* init is complete) */
 	S.SIGWINCH_handler.sa_handler = win_changed;
 	S.SIGWINCH_handler.sa_flags = SA_RESTART;
-	sigaction(SIGWINCH, &S.SIGWINCH_handler, &S.SIGWINCH_handler);
-
+	sigaction2(SIGWINCH, &S.SIGWINCH_handler);
+#endif
 	read_key_buffer[0] = 0;
 	while (1) {
 		/*
@@ -2424,6 +2465,7 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 		 * in one place.
 		 */
 		int32_t ic, ic_raw;
+#if ENABLE_FEATURE_EDITING_WINCH
 		unsigned count;
 
 		count = S.SIGWINCH_count;
@@ -2431,7 +2473,7 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 			S.SIGWINCH_saved = count;
 			cmdedit_setwidth();
 		}
-
+#endif
 		ic = ic_raw = lineedit_read_key(read_key_buffer, timeout);
 
 #if ENABLE_FEATURE_REVERSE_SEARCH
@@ -2868,8 +2910,10 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 
 	/* restore initial_settings */
 	tcsetattr_stdin_TCSANOW(&initial_settings);
+#if ENABLE_FEATURE_EDITING_WINCH
 	/* restore SIGWINCH handler */
 	sigaction_set(SIGWINCH, &S.SIGWINCH_handler);
+#endif
 	fflush_all();
 
 	len = command_len;

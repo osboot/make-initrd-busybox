@@ -10,7 +10,7 @@
  * Heavily modified for busybox by Erik Andersen <andersen@codepoet.org>
  */
 //config:config TIME
-//config:	bool "time (7 kb)"
+//config:	bool "time (6.8 kb)"
 //config:	default y
 //config:	help
 //config:	The time command runs the specified program with the given arguments.
@@ -32,7 +32,6 @@
 //usage:     "\n	-a	Append (else overwrite)"
 
 #include "libbb.h"
-#include <sys/resource.h> /* getrusage */
 
 /* Information on the resources used by a child process.  */
 typedef struct {
@@ -89,7 +88,7 @@ static void resuse_end(pid_t pid, resource_t *resp)
 	 * returns the child process, set the time the command finished. */
 	while ((caught = wait3(&resp->waitstatus, 0, &resp->ru)) != pid) {
 		if (caught == -1 && errno != EINTR) {
-			bb_perror_msg("wait");
+			bb_simple_perror_msg("wait");
 			return;
 		}
 	}

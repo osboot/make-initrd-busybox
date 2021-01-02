@@ -7,7 +7,7 @@
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
 //config:config RPM
-//config:	bool "rpm (33 kb)"
+//config:	bool "rpm (32 kb)"
 //config:	default y
 //config:	help
 //config:	Mini RPM applet - queries and extracts RPM packages.
@@ -499,7 +499,7 @@ int rpm_main(int argc, char **argv)
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
 //config:config RPM2CPIO
-//config:	bool "rpm2cpio (20 kb)"
+//config:	bool "rpm2cpio (21 kb)"
 //config:	default y
 //config:	help
 //config:	Converts a RPM file into a CPIO archive.
@@ -543,7 +543,7 @@ int rpm2cpio_main(int argc UNUSED_PARAM, char **argv)
 	}
 
 	if (bb_copyfd_eof(rpm_fd, STDOUT_FILENO) < 0)
-		bb_error_msg_and_die("error unpacking");
+		bb_simple_error_msg_and_die("error unpacking");
 
 	if (ENABLE_FEATURE_CLEAN_UP) {
 		close(rpm_fd);

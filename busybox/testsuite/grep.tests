@@ -15,7 +15,7 @@
 
 testing "grep (exit with error)" "grep nonexistent 2> /dev/null ; echo \$?" \
 	"1\n" "" ""
-testing "grep (exit success)" "grep grep $0 > /dev/null 2>&1 ; echo \$?" "0\n" \
+testing "grep (exit success)" "grep grep '$0' > /dev/null 2>&1 ; echo \$?" "0\n" \
 	"" ""
 # Test various data sources and destinations
 
@@ -129,6 +129,12 @@ testing "grep -v -f EMPTY_FILE" \
 	"" \
 	"test\n"
 
+testing "grep -vxf EMPTY_FILE" \
+	"grep -vxf input" \
+	"test\n" \
+	"" \
+	"test\n"
+
 testing "grep -Fw matches only words" \
 	"grep -Fw foo input" \
 	"" \
@@ -165,11 +171,36 @@ testing "grep -w word doesn't match wordword" \
 	"wordword\n" \
 	""
 
+testing "grep -F -w w doesn't match ww" \
+	"grep -F -w w input" \
+	"" \
+	"ww\n" \
+	""
+
 testing "grep -w word match second word" \
 	"grep -w word input" \
 	"bword,word\n""wordb,word\n""bwordb,word\n" \
 	"bword,word\n""wordb,word\n""bwordb,word\n" \
 	""
+
+
+testing "grep -x -v -e EXP1 -e EXP2 finds nothing if either EXP matches" \
+	"grep -x -v -e '.*aa.*' -e 'bb.*'; echo \$?" \
+	"1\n" \
+	"" \
+	"  aa bb cc\n"
+
+testing "grep PATTERN can be a newline-delimited list" \
+	'grep -Fv "$(printf "foo\nbar\n")"' \
+	"baz\n" \
+	"" \
+	"foo\nbar\nbaz\n"
+
+testing "grep -e PATTERN can be a newline-delimited list" \
+	'grep -Fv -e "$(printf "foo\nbar\n")"' \
+	"baz\n" \
+	"" \
+	"foo\nbar\nbaz\n"
 
 # -r on symlink to dir should recurse into dir
 mkdir -p grep.testdir/foo

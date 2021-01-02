@@ -27,7 +27,7 @@
  * See below for mask names explanation.
  */
 //config:config INOTIFYD
-//config:	bool "inotifyd (3.5 kb)"
+//config:	bool "inotifyd (3.6 kb)"
 //config:	default n  # doesn't build on Knoppix 5
 //config:	help
 //config:	Simple inotify daemon. Reports filesystem changes. Requires
@@ -117,7 +117,7 @@ int inotifyd_main(int argc, char **argv)
 	// open inotify
 	pfd.fd = inotify_init();
 	if (pfd.fd < 0)
-		bb_perror_msg_and_die("no kernel support");
+		bb_simple_perror_msg_and_die("no kernel support");
 
 	// setup watches
 	while (*++argv) {

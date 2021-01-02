@@ -11,7 +11,7 @@
  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
  */
 //config:config FLASH_ERASEALL
-//config:	bool "flash_eraseall (5.5 kb)"
+//config:	bool "flash_eraseall (5.9 kb)"
 //config:	default n  # doesn't build on Ubuntu 8.04
 //config:	help
 //config:	The flash_eraseall binary from mtd-utils as of git head c4c6a59eb.
@@ -101,7 +101,7 @@ int flash_eraseall_main(int argc UNUSED_PARAM, char **argv)
 	if (flags & OPTION_J) {
 		uint32_t *crc32_table;
 
-		crc32_table = crc32_filltable(NULL, 0);
+		crc32_table = crc32_new_table_le();
 
 		cleanmarker.magic = cpu_to_je16(JFFS2_MAGIC_BITMASK);
 		cleanmarker.nodetype = cpu_to_je16(JFFS2_NODETYPE_CLEANMARKER);
@@ -120,7 +120,7 @@ int flash_eraseall_main(int argc UNUSED_PARAM, char **argv)
 				if (clmlen > 8)
 					clmlen = 8;
 				if (clmlen == 0)
-					bb_error_msg_and_die("autoplacement selected and no empty space in oob");
+					bb_simple_error_msg_and_die("autoplacement selected and no empty space in oob");
 			} else {
 				/* Legacy mode */
 				switch (meminfo.oobsize) {
@@ -168,9 +168,9 @@ int flash_eraseall_main(int argc UNUSED_PARAM, char **argv)
 				if (errno == EOPNOTSUPP) {
 					flags |= OPTION_N;
 					if (flags & IS_NAND)
-						bb_error_msg_and_die("bad block check not available");
+						bb_simple_error_msg_and_die("bad block check not available");
 				} else {
-					bb_perror_msg_and_die("MEMGETBADBLOCK error");
+					bb_simple_perror_msg_and_die("MEMGETBADBLOCK error");
 				}
 			}
 		}
